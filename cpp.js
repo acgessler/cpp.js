@@ -184,13 +184,22 @@ function cpp_js(settings) {
 								if(command == 'ifndef') {
 									elem = '!' + elem;
 								}
+								// fallthrough
+								
+							case "if":
+								if_stack.push(false);
+								// fallthrough
 								
 							case "else":
 							case "elif":
-							case "if":
-								if_stack.push(false);
+								var never_reached = false;
+								if (command == 'elif' || command == 'else') {
+									never_reached = if_stack[if_stack.length-1];
+									if (ifs_failed > 0) {
+										--ifs_failed;
+									}
+								}
 								
-								var never_reached = (command == 'elif' || command == 'else') && if_stack[if_stack.length-1];
 								if (ifs_failed > 0 || never_reached || command != 'else' && !this._eval(elem)) {
 									++ifs_failed;
 								}
