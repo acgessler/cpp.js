@@ -116,7 +116,9 @@ function cpp_js(settings) {
 	// without L,l,U,u suffix and separate all components.
 	var is_integer_re = /\b(\+|-|)(0|0x|)([1-9a-f][0-9a-f]*|0)([ul]*)\b/ig;
 	
-	
+	var is_string_re = /"(.*?)"/g;
+	var is_assignment_re = /[+\-*%\/&^|]?=(?!=)/g;
+	var is_increment_re = /--|\+\+/g;
 	
 	var state = {};
 	
@@ -205,6 +207,9 @@ function cpp_js(settings) {
 								
 							case "if":
 								if_stack.push(false);
+								if (!elem.length) {
+									error("expected identifier after if");
+								}
 								// fallthrough
 								
 							case "else":
@@ -234,7 +239,7 @@ function cpp_js(settings) {
 								break;
 								
 							case "endif":
-								if(if_stack.length === 0) {
+								if(!if_stack.length) {
 									error("endif with no matching if");
 								}
 								if (ifs_failed > 0) {
@@ -311,6 +316,24 @@ function cpp_js(settings) {
 			// see C99/6.10.1.2-3
 			
 			console.log('_eval: ' + val);
+			
+			// string literals are not allowed 
+			if (val.match(is_string_re)) {
+				error('string literal not allowed in if expression');
+			}
+			
+			// neither are assignment or compound assignment ops
+			if (val.match(is_assignment_re)) {
+				error('assignment operator not allowed in if expression');
+			}
+			
+			// same for increment/decrement - we need to catch these
+			// cases because they might be used to exploit eval().
+			if (val.match(is_increment_re)) {
+				error('--/++ operators not allowed in if expression');
+			}
+			
+			// XXX handle character constants
 			
 			// drop the L,l,U,u suffixes for integer literals
 			val = val.replace(is_integer_re,'$1$2$3');
