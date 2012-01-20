@@ -214,13 +214,11 @@ function cpp_js(settings) {
 							"no handler specified");
 					}
 					
-					console.log('fetch ' + file);
 					settings.include_func(file, function(contents) {
 						if (contents === null) {
 							error("failed to access include file: " +
 								file);
 						}
-					console.log('got ' + file);
 						var s = {};
 						for(var k in settings) {
 							s[k] = settings[k]; 
@@ -231,16 +229,13 @@ function cpp_js(settings) {
 							
 							outi += lines.length;
 							out = out.concat(lines);
-							console.log(out);
-							console.log('include ' + file);
+			
 							state = new_state;
 							for (++i; i < blocks.length; ++i) {
 								if(!process_block(i,blocks[i])) {
 									return false;
 								}
 							}
-							console.log('give result');
-							console.log(out);
 							self._result(out, state);
 						};
 						
@@ -406,7 +401,6 @@ function cpp_js(settings) {
 			var old_val = val;
 		
 			// see C99/6.10.1.2-3
-			console.log('_eval: ' + val);
 			
 			// string literals are not allowed 
 			if (val.match(is_string_re)) {
@@ -433,24 +427,15 @@ function cpp_js(settings) {
 			// this is done by substituting a safe sentinel value (which starts
 			// with two underscores and is thus reserved).
 			val = val.replace(defined_no_parens_re,'defined($1)');
-			
-			console.log('_eval: ' + val);
-			
 			val = val.replace(defined_re,' __defined_magic_$1_ ');
-			
-			console.log('_eval: ' + val);
 			
 			val = this.subs(val);
 		
 			// re-substitute defined() terms and quote the argument
 			val = val.replace(defined_magic_sentinel_re,'defined("$1")');
 			
-			console.log('eval: ' + val);
-			
 			// replace all remaining identifiers with '0'
 			val = val.replace(is_identifier_re,' 0 ');
-			
-			console.log('eval: ' + val);
 			
 			// bring defined() function into direct scope
 			var defined = this.defined;
@@ -462,8 +447,6 @@ function cpp_js(settings) {
 			catch (e) {
 				error("error in expression: " + old_val);
 			}
-			
-			console.log('res: ' + res);
 			return res;
 		},
 	};
