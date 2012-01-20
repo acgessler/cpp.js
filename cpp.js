@@ -77,17 +77,6 @@ function cpp_js(settings) {
 	}
 	
 	
-	// wrapped error function, augments line number and file
-	var error = function(text) {
-		settings.error_func("(cpp) error:" + text);
-	};
-	
-	// wrapped warning function, augments line number and file
-	var warn = function(text) {
-		settings.warn_func("(cpp) warning:" + text);
-	};
-	
-	
 	// generate a 3 tuple (command, arguments, code_block)
 	var block_re = new RegExp("^"+settings.signal_char+
 		"(\\w+)[ \t]*(.*?)[ \t]*$","m"
@@ -164,7 +153,8 @@ function cpp_js(settings) {
 			return new_text == text ? new_text : this.subs(new_text);
 		}, 
 	
-		run : function(text) {
+		run : function(text, name) {
+			name = name || '<unnamed>';
 			
 			var blocks = text.split(block_re);
 			console.log(blocks);
@@ -174,10 +164,20 @@ function cpp_js(settings) {
 				out[i] = '';
 			}
 			
-			var ifs_nested = 0, ifs_failed = 0, if_done = false;
-			
+			var ifs_nested = 0, ifs_failed = 0, if_done = false, line = 1;
 			var if_stack = [];
 			
+			// wrapped error function, augments line number and file
+			var error = function(text) {
+				settings.error_func("(cpp) error("+name+":"+line+"): " + text);
+			};
+			
+			// wrapped warning function, augments line number and file
+			var warn = function(text) {
+				settings.warn_func("(++) warning("+name+":"+line+"): " + text);
+			};
+			
+			var skip = false;
 			for (var i = 0; i < blocks.length; ++i) {
 			
 				var elem = blocks[i];
@@ -185,10 +185,17 @@ function cpp_js(settings) {
 					// code line, apply macro substitutions and copy
 					// to output.
 					case 0:
-						out[outi++] = this.subs(elem);
+						line += elem.split('\n').length-1;
+						if (skip) {
+							skip = false;
+						}
+						else {
+							out[outi++] = this.subs(elem);
+						}
 						break;
 					// preprocessor statement, such as ifdef, endif, ..
 					case 1:
+						//++line;
 						command = elem;
 						break;
 					// the rest of the preprocessor line, this is where
@@ -232,8 +239,10 @@ function cpp_js(settings) {
 								}
 								
 								if (ifs_failed > 0 || not_reached || 
-									(command != 'else' && !this._eval(elem))
-								){
+									(command != 'else' && 
+									!this._eval(elem, error, warn)
+									
+								)){
 									++ifs_failed;
 								}
 								else {
@@ -296,7 +305,7 @@ function cpp_js(settings) {
 						
 						// ignore dead block contents
 						if (ifs_failed > 0) {
-							++i;
+							skip = true;
 						}
 						break;
 				} 
@@ -316,7 +325,7 @@ function cpp_js(settings) {
 			return !!identifier.match(is_identifier_only_re);
 		},
 		
-		_eval : function(val) {
+		_eval : function(val, error, warn) {
 			var old_val = val;
 		
 			// see C99/6.10.1.2-3
