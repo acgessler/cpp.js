@@ -77,17 +77,15 @@ function cpp_js(settings) {
 	}
 	
 	
-	
-	
+	// wrapped error function, augments line number and file
 	var error = function(text) {
 		settings.error_func("(cpp) error:" + text);
 	};
 	
+	// wrapped warning function, augments line number and file
 	var warn = function(text) {
 		settings.warn_func("(cpp) warning:" + text);
 	};
-	
-	
 	
 	
 	// generate a 3 tuple (command, arguments, code_block)
@@ -116,9 +114,16 @@ function cpp_js(settings) {
 	// without L,l,U,u suffix and separate all components.
 	var is_integer_re = /\b(\+|-|)(0|0x|)([1-9a-f][0-9a-f]*|0)([ul]*)\b/ig;
 	
+	// Grab doubly quoted strings
 	var is_string_re = /"(.*?)"/g;
-	var is_assignment_re = /[+\-*%\/&^|]?=(?!=)/g;
+	
+	// Grab compound assignments. Extra fix for !=, ==, <=, >= needed
+	var is_assignment_re = /[+\-*%\/&^|]?=/g; 
+	
+	// Grab instances of the increment/decrement operators
 	var is_increment_re = /--|\+\+/g;
+	
+	
 	
 	var state = {};
 	
@@ -246,6 +251,7 @@ function cpp_js(settings) {
 									--ifs_failed;
 								}
 								if_stack.pop();
+								// ignore trailing junk on endifs
 								break;
 								
 							default:
@@ -323,7 +329,7 @@ function cpp_js(settings) {
 			}
 			
 			// neither are assignment or compound assignment ops
-			if (val.match(is_assignment_re)) {
+			if (val.replace(/[=!<>]=/g,'').match(is_assignment_re)) {
 				error('assignment operator not allowed in if expression');
 			}
 			
