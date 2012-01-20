@@ -62,6 +62,9 @@ function cpp_js(settings) {
 			console.log(s);
 			throw s;
 		},
+		
+		include_func : null,
+		completion_func : null
 	};
 	
 	// apply default settings
@@ -76,6 +79,9 @@ function cpp_js(settings) {
 		settings = default_settings;
 	}
 	
+	if (settings.include_func && !settings.completion_func) {
+		settings.error_func("include_func but not completion_func specified");
+	}
 	
 	// generate a 3 tuple (command, arguments, code_block)
 	var block_re = new RegExp("^"+settings.signal_char+
@@ -112,6 +118,8 @@ function cpp_js(settings) {
 	// Grab instances of the increment/decrement operators
 	var is_increment_re = /--|\+\+/g;
 	
+	// Grav <included_file> or "included_file"
+	var include_re = /(?:<(.*)>|"(.*)")(.*)/;
 	
 	
 	var state = {};
@@ -128,7 +136,7 @@ function cpp_js(settings) {
 	
 		define : function(k,v) {
 			if (!this._is_identifier(k)) {
-				throw "cpp.js: not a valid preprocessor identifier: '" + k + "'";
+				settings.error_func("not a valid preprocessor identifier: '" + k + "'");
 			}
 			state[k] = v || '';
 		},
@@ -157,7 +165,6 @@ function cpp_js(settings) {
 			name = name || '<unnamed>';
 			
 			var blocks = text.split(block_re);
-			console.log(blocks);
 			
 			var out = new Array(Math.floor(blocks.length/3) + 2), outi = 0;
 			for (var i = 0; i < out.length; ++i) {
@@ -174,149 +181,219 @@ function cpp_js(settings) {
 			
 			// wrapped warning function, augments line number and file
 			var warn = function(text) {
-				settings.warn_func("(++) warning("+name+":"+line+"): " + text);
+				settings.warn_func("(cpp) warning("+name+":"+line+"): " + text);
 			};
 			
 			var skip = false;
-			for (var i = 0; i < blocks.length; ++i) {
+			var self = this;
 			
+			var process_directive = function(command, elem) {
+				switch (command) {
+				case "define":
+					var e = elem.split(/\s/,2);
+					self.define(trim(e[0]), e[1] 
+						? trim(e[1]) 
+						: undefined
+					);
+					break;
+					
+				case "undef":
+					self.undefine(elem);
+					break;
+					
+				case "include":
+					elem = self.subs(elem);
+					var parts = elem.match(include_re);
+					if (parts[3]) {
+						error("unrecognized characters in include: " + elem);
+					}
+					var file = (parts[1] || '') + (parts[2] || '');
+					
+					if (!settings.include_func) {
+						error("include directive not supported, " +
+							"no handler specified");
+					}
+					
+					console.log('fetch ' + file);
+					settings.include_func(file, function(contents) {
+						if (contents === null) {
+							error("failed to access include file: " +
+								file);
+						}
+					console.log('got ' + file);
+						var s = {};
+						for(var k in settings) {
+							s[k] = settings[k]; 
+						}
+						
+						s.completion_func = function(data, lines, new_state) {
+							out.length = outi;
+							
+							outi += lines.length;
+							out = out.concat(lines);
+							console.log(out);
+							console.log('include ' + file);
+							state = new_state;
+							for (++i; i < blocks.length; ++i) {
+								if(!process_block(i,blocks[i])) {
+									return false;
+								}
+							}
+							console.log('give result');
+							console.log(out);
+							self._result(out, state);
+						};
+						
+						var processor = cpp_js(s);
+						processor.define_multiple(state);
+						processor.run(contents, file);
+					});
+					return false;
+					
+				case "error":
+					error("#error: " + elem);
+					break;
+					
+				case "pragma":
+					// silently ignore unrecognized pragma
+					// directives (i.e. all at this time)
+					break;
+					
+				default:
+					warn("unrecognized preprocessor command: "
+						+ command
+					);
+					break;
+				};
+				return true;
+			};
+			
+			var process_block = function(i, elem) {
 				var elem = blocks[i];
 				switch(i % 3) {
-					// code line, apply macro substitutions and copy
-					// to output.
-					case 0:
-						line += elem.split('\n').length-1;
-						if (skip) {
-							skip = false;
-						}
-						else {
-							out[outi++] = this.subs(elem);
-						}
-						break;
-					// preprocessor statement, such as ifdef, endif, ..
-					case 1:
-						//++line;
-						command = elem;
-						break;
-					// the rest of the preprocessor line, this is where
-					// expression evaluation happens
-					case 2:
-						var done = true;
-						switch (command) {
-							case "ifdef":
-							case "ifndef":
-								if (!elem) {
-									error("expected identifier after " + 
-										command);
-								}
-								// translate ifdef/ifndef to regular if by 
-								// using defined()
-								elem = "(defined " + elem + ")";
-								if(command == 'ifndef') {
-									elem = '!' + elem;
-								}
-								// fallthrough
-								
-							case "if":
-								if_stack.push(false);
-								if (!elem.length) {
-									error("expected identifier after if");
-								}
-								// fallthrough
-								
-							case "else":
-							case "elif":
-								var not_reached = false;
-								if (command == 'elif' || command == 'else') {
-									not_reached = if_stack[if_stack.length-1];
-									if (ifs_failed > 0) {
-										--ifs_failed;
-									}
-									
-									if (command == 'else' && elem.length) {
-										warn('ignoring tokens after else');
-									}
-								}
-								
-								if (ifs_failed > 0 || not_reached || 
-									(command != 'else' && 
-									!this._eval(elem, error, warn)
-									
-								)){
-									++ifs_failed;
-								}
-								else {
-									// we run this branch, so skip any 
-									// further else/elsif branches
-									if_stack[if_stack.length-1] = true;
-								}
-								break;
-								
-							case "endif":
-								if(!if_stack.length) {
-									error("endif with no matching if");
-								}
+				// code line, apply macro substitutions and copy
+				// to output.
+				case 0:
+					line += elem.split('\n').length-1;
+					if (!ifs_failed) {
+						out[outi++] = self.subs(elem);
+					}
+					break;
+				// preprocessor statement, such as ifdef, endif, ..
+				case 1:
+					//++line;
+					command = elem;
+					break;
+				// the rest of the preprocessor line, self is where
+				// expression evaluation happens
+				case 2:
+					var done = true;
+					switch (command) {
+						case "ifdef":
+						case "ifndef":
+							if (!elem) {
+								error("expected identifier after " + 
+									command);
+							}
+							// translate ifdef/ifndef to regular if by 
+							// using defined()
+							elem = "(defined " + elem + ")";
+							if(command == 'ifndef') {
+								elem = '!' + elem;
+							}
+							// fallthrough
+							
+						case "if":
+							if_stack.push(false);
+							if (!elem.length) {
+								error("expected identifier after if");
+							}
+							// fallthrough
+							
+						case "else":
+						case "elif":
+							var not_reached = false;
+							if (command == 'elif' || command == 'else') {
+								not_reached = if_stack[if_stack.length-1];
 								if (ifs_failed > 0) {
 									--ifs_failed;
 								}
-								if_stack.pop();
-								// ignore trailing junk on endifs
-								break;
 								
-							default:
-								done = ifs_failed > 0;
-						};
+								if (command == 'else' && elem.length) {
+									warn('ignoring tokens after else');
+								}
+							}
+							
+							if (ifs_failed > 0 || not_reached || 
+								(command != 'else' && 
+								!self._eval(elem, error, warn)
+								
+							)){
+								++ifs_failed;
+							}
+							else {
+								// we run self branch, so skip any further else/
+								// elsif branches
+								if_stack[if_stack.length-1] = true;
+							}
+							break;
+							
+						case "endif":
+							if(!if_stack.length) {
+								error("endif with no matching if");
+							}
+							if (ifs_failed > 0) {
+								--ifs_failed;
+							}
+							if_stack.pop();
+							// ignore trailing junk on endifs
+							break;
+							
+						default:
+							done = ifs_failed > 0;
+					};
 
-						if(!done) {
-							switch (command) {
-								case "define":
-									var e = elem.split(/\s/,2);
-									this.define(trim(e[0]), e[1] 
-										? trim(e[1]) 
-										: undefined
-									);
-									break;
-									
-								case "undef":
-									this.undef(elem);
-									break;
-									
-								case "include":
-									// TODO
-									error("include not implemented yet");
-									break;
-									
-								case "error":
-									error("#error: " + elem);
-									break;
-									
-								case "pragma":
-									// silently ignore unrecognized pragma
-									// directives (i.e. all at this time)
-									break;
-									
-								default:
-									warn("unrecognized preprocessor command: "
-										+ command
-									);
-									break;
-							};
+					// not done yet, so this is a plain directive (i.e. include)
+					if(!done) {
+						if(!process_directive(command, elem)) {
+							return false;
 						}
-						
-						// ignore dead block contents
-						if (ifs_failed > 0) {
-							skip = true;
-						}
-						break;
-				} 
+					}
+					break;
+				}
+				return true;
+			};
+			
+			for (var i = 0; i < blocks.length; ++i) {
+				if(!process_block(i,blocks[i])) {
+					return null;
+				}
 			}
 			
 			if(if_stack.length > 0) {
 				error("unexpected EOF, expected endif");
 			}
 			
-			console.log(out);
-			return out.join('\n');
+			return this._result(out, state);
+		},
+		
+		_result : function(arr, state) {
+			// drop empty lines at the end
+			for (var i = arr.length-1; i >= 0; --i) {
+				if (!arr[i]) {
+					arr.pop();
+				}
+				else {
+					break;
+				}
+			}
+		
+			var text = arr.join('\n');
+			if (settings.completion_func) {
+				settings.completion_func(text,arr, state);
+			}
+			
+			return text;
 		},
 		
 		_is_identifier : function(identifier) {
@@ -329,7 +406,6 @@ function cpp_js(settings) {
 			var old_val = val;
 		
 			// see C99/6.10.1.2-3
-			
 			console.log('_eval: ' + val);
 			
 			// string literals are not allowed 

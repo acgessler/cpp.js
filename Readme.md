@@ -36,6 +36,10 @@ var settings = {
    // function used to print critical errors, the default 
    // implementation invokes console.log and throws.
    error_func : null,
+   
+   // function to be invoked to fetch include files.
+   // See the section "Handling include files" below.
+   include_func : null,
 }
 
 // Create an instance of the library. `settings` is optional.
@@ -94,6 +98,34 @@ var pp = cpp.create( settings );
 
 ```
 
+### Handling #include files ###
+
+By default, include directives cause errors. To enable #include-support, one
+must specify an `include_func` in the initial settings. This function receives
+the name of the include file requested and a closure to resume preprocessing
+as soon as the data is available (the mechanism is thus compatible with
+fetching files asynchronously, i.e. AJAX).
+
+*If include files are enabled, cpp.js becomes strictly asynchronous* and
+`run()` always returns null. Therefore it is also necessary to specify an
+`completion_func` callback in the settings, which is invoked as soon as 
+preprocessing is complete, receiving the preprocessed text as parameter.
+
+The basic structure for this scenario is like this:
+
+```javascript
+
+settings.include_func = function(file, resumer, error) {
+    do_fancy_magic_to_fetch_this_file(file, function(contents) {
+		// call resumer(null) if the file is not accessible
+	   resumer(contents);
+	});
+};
+
+settings.completion_func = function(preprocessed_text) {
+    
+};
+```
 
 ### Conformance ###
 
