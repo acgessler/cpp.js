@@ -63,11 +63,7 @@ pp.undef('DEBUG');
 // And query the current state of a particular define
 pp.defined('DEBUG'); // => false
 
-// Now invoke the preprocesser on the given text block. The returned source
-// no longer contains any preprocessor commands. Note: input strings 
-// containing no preprocessor commands are returned unchanged, 
-// i.e. pp.run(pp.run(text, ...)) == pp.run(text, ...)
-
+// Now invoke the preprocesser on the given text block.
 // Keep in mind that the processor keeps the state obtained from executing 
 // the text block, so if run() is invoked on multiple text blocks, any 
 // defines from a block will also apply to its successors.
@@ -76,9 +72,8 @@ pp.defined('DEBUG'); // => false
 // i.e. all if's must be closed and may not leap into the next block.
 var preprocessed_source = pp.run(text);
 
-// Calling clear() resets all defined values, so the effect of 
-// calling run() after clear()ing is the same as run()ing a fresh
-// cpp.js instance.
+// Calling clear() resets all defined values. The effect is the same as if
+// a fresh cpp.js instance with same settings was created.
 pp.clear();
 
 ```
@@ -100,16 +95,18 @@ var pp = cpp.create( settings );
 
 ### Handling #include files ###
 
-By default, include directives cause errors. To enable #include-support, one
+By default, include directives cause errors. To enable `#include`-support, one
 must specify an `include_func` in the initial settings. This function receives
-the name of the include file requested and a closure to resume preprocessing
-as soon as the data is available (the mechanism is thus compatible with
-fetching files asynchronously, i.e. AJAX).
+the name of the include file that is requested and a closure to resume
+preprocessing as soon as the file is available (the mechanism is thus 
+compatible with asynchronous file reading, i.e. via AJAX or node.js).
 
-*If include files are enabled, cpp.js becomes strictly asynchronous* and
+**If include files are enabled, cpp.js becomes strictly asynchronous** and
 `run()` always returns null. Therefore it is also necessary to specify an
 `completion_func` callback in the settings, which is invoked as soon as 
 preprocessing is complete, receiving the preprocessed text as parameter.
+
+Specifying an `include_func` but no `completion_func` is not allowed.
 
 The basic structure for this scenario is like this:
 
@@ -123,12 +120,16 @@ settings.include_func = function(file, resumer, error) {
 };
 
 settings.completion_func = function(preprocessed_text) {
-    
+    // process result
 };
 ```
 
 ### Conformance ###
 
-TODO
+cpp.js was written with the C99 language standard in mind and conforms in most
+aspects. However, its expression evaluation engine is based on `eval`, whose
+arithmetics are not strictly C-compliant (i.e. underflow/overflow).
+
+
 
 
