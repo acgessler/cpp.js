@@ -50,7 +50,7 @@ function cpp_js(settings) {
 		return str;
 	};
 
-	
+	// dictionary of default settings, including default error handlers
 	var default_settings = {
 		signal_char : '#',
 		
@@ -77,6 +77,8 @@ function cpp_js(settings) {
 	}
 	
 	
+	
+	
 	var error = function(text) {
 		settings.error_func("(cpp) error:" + text);
 	};
@@ -85,11 +87,17 @@ function cpp_js(settings) {
 		settings.warn_func("(cpp) warning:" + text);
 	};
 	
-
-	var block_re = new RegExp("^"+settings.signal_char+"(\\w+)[ \t]*(.*?)[ \t]*$","m");
 	
-	// (match identifiers according to 6.4.2.1, do not match 'defined')
-	var is_identifier_re = /\b(d(?!efined)|[a-ce-zA-Z_])\w*(?![0-9a-zA-Z_"])/g;
+	
+	
+	// generate a 3 tuple (command, arguments, code_block)
+	var block_re = new RegExp("^"+settings.signal_char+
+		"(\\w+)[ \t]*(.*?)[ \t]*$","m"
+	);
+	
+	// (match identifiers according to 6.4.2.1, do not match 'defined',
+	// do not match quote strings either)
+	var is_identifier_re = /\b(d(?!efined)|[a-ce-zA-Z_])\w*(?![\w"])/g;
 	
 	// same, but checks if the entire string is an identifier
 	var is_identifier_only_re = /^(d(?!efined)|[a-ce-zA-Z_])\w*$/g;
@@ -101,7 +109,7 @@ function cpp_js(settings) {
 	var defined_re = /defined\s*\((\s*[a-zA-Z_]\w*\s*)\)/g;
 	
 	// __defined_magic_<identifier>_ (a special sentinel value used to
-	// temporarily exclude operands to defined() from macro substitution.
+	// temporarily exclude operands to defined from macro substitution.
 	var defined_magic_sentinel_re = /__defined_magic_([a-zA-Z_]\w*)_/;
 	
 	var state = {};
@@ -178,8 +186,11 @@ function cpp_js(settings) {
 							case "ifdef":
 							case "ifndef":
 								if (!elem) {
-									// TODO
+									error("expected identifier after " + 
+										command);
 								}
+								// translate ifdef/ifndef to regular if by 
+								// using defined()
 								elem = "(defined " + elem + ")";
 								if(command == 'ifndef') {
 									elem = '!' + elem;
@@ -192,19 +203,26 @@ function cpp_js(settings) {
 								
 							case "else":
 							case "elif":
-								var never_reached = false;
+								var not_reached = false;
 								if (command == 'elif' || command == 'else') {
-									never_reached = if_stack[if_stack.length-1];
+									not_reached = if_stack[if_stack.length-1];
 									if (ifs_failed > 0) {
 										--ifs_failed;
 									}
+									
+									if (command == 'else' && elem.length) {
+										warn('ignoring tokens after else');
+									}
 								}
 								
-								if (ifs_failed > 0 || never_reached || command != 'else' && !this._eval(elem)) {
+								if (ifs_failed > 0 || not_reached || 
+									(command != 'else' && !this._eval(elem))
+								){
 									++ifs_failed;
 								}
 								else {
-									// run this branch, so skip any further else/elsif branches
+									// we run this branch, so skip any 
+									// further else/elsif branches
 									if_stack[if_stack.length-1] = true;
 								}
 								break;
@@ -227,7 +245,10 @@ function cpp_js(settings) {
 							switch (command) {
 								case "define":
 									var e = elem.split(/\s/,2);
-									this.define(trim(e[0]), e[1] ? trim(e[1]) : undefined);
+									this.define(trim(e[0]), e[1] 
+										? trim(e[1]) 
+										: undefined
+									);
 									break;
 									
 								case "undef":
@@ -244,16 +265,19 @@ function cpp_js(settings) {
 									break;
 									
 								case "pragma":
-									// silently ignore unrecognized pragma directives (i.e. all)
+									// silently ignore unrecognized pragma
+									// directives (i.e. all at this time)
 									break;
 									
 								default:
-									warn("unrecognized preprocessor command: " + command);
+									warn("unrecognized preprocessor command: "
+										+ command
+									);
 									break;
 							};
 						}
 						
-						// ignore block contents if we are still within a dead block
+						// ignore dead block contents
 						if (ifs_failed > 0) {
 							++i;
 						}

@@ -67,6 +67,9 @@ pp.defined('DEBUG'); // => false
 // Keep in mind that the processor keeps the state obtained from executing 
 // the text block, so if run() is invoked on multiple text blocks, any 
 // defines from a block will also apply to its successors.
+
+// However, a text block is assumed to be syntactically complete on its own, 
+// i.e. all if's must be closed and may not leap into the next block.
 var preprocessed_source = pp.run(text);
 
 // Calling clear() resets all defined values, so the effect of 
