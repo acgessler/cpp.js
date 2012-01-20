@@ -191,10 +191,11 @@ function cpp_js(settings) {
 				switch (command) {
 				case "define":
 					var e = elem.split(/\s/,2);
-					self.define(trim(e[0]), e[1] 
-						? trim(e[1]) 
-						: undefined
-					);
+					e[0] = trim(e[0]);
+					if (self.defined(e[0])) {
+						warn(e[0] + ' redefined');
+					}
+					self.define(e[0], e[1] ? trim(e[1]) : undefined);
 					break;
 					
 				case "undef":
