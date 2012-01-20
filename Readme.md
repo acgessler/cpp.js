@@ -6,7 +6,7 @@ cpp.js
 cpp.js is a tiny implementation of the C preprocessor (cpp) in Javascript (js).
 
 My pet project medea.js uses this code to preprocess GLSL shaders, other use
-cases might exist.
+cases might even exist.
 
 ### License ###
 
@@ -21,20 +21,27 @@ to this page is also fine).
 
 ```javascript
 
-// setup basic settings for the preprocessor. The values below
-// are the default values, you an omit them if you agree.
+// Setup basic settings for the preprocessor. The values as shown below
+// are the default values and can be omitted.
 var settings = { 
 
    // character / string that starts a preprocessor command, 
    // only honoured at the beginning of a line.
-   signal_char : '#' 
+   signal_char : '#',
+
+   // function used to print warnings, the default 
+   // implementation invokes console.log.
+   warn_func : null,
+
+   // function used to print critical errors, the default 
+   // implementation invokes console.log and throws.
+   error_func : null,
 }
 
-// create an instance of the library. `settings` may also be
-// omitted at all to use only default values.
+// Create an instance of the library. `settings` is optional.
 var pp = cpp_js( settings );
 
-// predefine some symbols, the same effect could be reached
+// Predefine some symbols, the same effect could be reached
 // by prepending the corresponding #define's to the source
 // code for preprocessing but this is way nicer.
 // cpp.js by itself does not predefine any symbols.
@@ -45,32 +52,33 @@ var predefined = {
 
 pp.define_multiple(predefined);
 
-// you can also do it step by step
+// Do the same step by step
 pp.define('UNIVERSAL_TRUTH','42');
 pp.undef('DEBUG');
 
-// and query the current state of a particular define
+// And query the current state of a particular define
 pp.defined('DEBUG'); // => false
 
-// now invoke the preprocesser on the given text. The returned source
+// Now invoke the preprocesser on the given text block. The returned source
 // no longer contains any preprocessor commands. Note: input strings 
-// containing not a single preprocessor command are returned unchanged, 
+// containing no preprocessor commands are returned unchanged, 
 // i.e. pp.run(pp.run(text, ...)) == pp.run(text, ...)
 
-// note that the processor keeps the state obtained from executing 
-// the text block, so if run() is invoked on multiple text blocks,
-// any defines from a block will also be available to its successors.
+// Keep in mind that the processor keeps the state obtained from executing 
+// the text block, so if run() is invoked on multiple text blocks, any 
+// defines from a block will also apply to its successors.
 var preprocessed_source = pp.run(text);
 
-// calling clear() resets all defined values, so the effect of 
-// calling run() after clear()ing is the same as calling run()
-// on a fresh instance of cpp.js.
+// Calling clear() resets all defined values, so the effect of 
+// calling run() after clear()ing is the same as run()ing a fresh
+// cpp.js instance.
 pp.clear();
 
 ```
 
+### node.js ###
 
-Running it from node.js is also possible:
+cpp.js also works as a node.js module:
 
 
 ```javascript
@@ -78,10 +86,14 @@ Running it from node.js is also possible:
 var cpp = require("./cpp");
 var pp = cpp.create( settings );
 
-// rest as above
+// ...
+// same as above
 
 ```
 
 
+### Conformance ###
+
+TODO
 
 

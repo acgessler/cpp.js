@@ -52,18 +52,39 @@ function cpp_js(settings) {
 
 	
 	var default_settings = {
-		signal_char : '#'
+		signal_char : '#',
+		
+		warn_func : function(s) {
+			console.log(s);
+		},
+		
+		error_func : function(s) {
+			console.log(s);
+			throw s;
+		},
 	};
 	
 	// apply default settings
-	if (!settings) {
-		settings = {};
+	if (settings) {
 		for(var k in default_settings) {
 			if (!(k in settings)) {
 				settings[k] = default_settings[k];
 			}
 		}
 	}
+	else {
+		settings = default_settings;
+	}
+	
+	
+	var error = function(text) {
+		settings.error_func("(cpp) error:" + text);
+	};
+	
+	var warn = function(text) {
+		settings.warn_func("(cpp) warning:" + text);
+	};
+	
 
 	var block_re = new RegExp("^"+settings.signal_char+"(\\w+)[ \t]*(.*?)[ \t]*$","m");
 	
@@ -132,7 +153,9 @@ function cpp_js(settings) {
 				out[i] = '';
 			}
 			
-			var ifs_nested = 0, ifs_failed = 0;
+			var ifs_nested = 0, ifs_failed = 0, if_done = false;
+			
+			var if_stack = [];
 			
 			for (var i = 0; i < blocks.length; ++i) {
 			
@@ -162,20 +185,29 @@ function cpp_js(settings) {
 									elem = '!' + elem;
 								}
 								
+							case "else":
+							case "elif":
 							case "if":
-								++ifs_nested;
-								if (ifs_failed > 0 || !this._eval(elem)) {
+								if_stack.push(false);
+								
+								var never_reached = (command == 'elif' || command == 'else') && if_stack[if_stack.length-1];
+								if (ifs_failed > 0 || never_reached || command != 'else' && !this._eval(elem)) {
 									++ifs_failed;
+								}
+								else {
+									// run this branch, so skip any further else/elsif branches
+									if_stack[if_stack.length-1] = true;
 								}
 								break;
 								
 							case "endif":
-								if(--ifs_nested < 0) {
-									// TODO
+								if(if_stack.length === 0) {
+									error("endif with no matching if");
 								}
 								if (ifs_failed > 0) {
 									--ifs_failed;
 								}
+								if_stack.pop();
 								break;
 								
 							default:
@@ -185,7 +217,7 @@ function cpp_js(settings) {
 						if(!done) {
 							switch (command) {
 								case "define":
-									var e = elem.split(/\s/,1);
+									var e = elem.split(/\s/,2);
 									this.define(trim(e[0]), e[1] ? trim(e[1]) : undefined);
 									break;
 									
@@ -195,15 +227,19 @@ function cpp_js(settings) {
 									
 								case "include":
 									// TODO
+									error("include not implemented yet");
 									break;
 									
 								case "error":
-									// TODO
+									error("#error: " + elem);
 									break;
 									
 								case "pragma":
+									// silently ignore unrecognized pragma directives (i.e. all)
+									break;
+									
 								default:
-									// TODO
+									warn("unrecognized preprocessor command: " + command);
 									break;
 							};
 						}
@@ -216,8 +252,8 @@ function cpp_js(settings) {
 				} 
 			}
 			
-			if(ifs_nested > 0) {
-				// TODO
+			if(if_stack.length > 0) {
+				error("unexpected EOF, expected endif");
 			}
 			
 			console.log(out);
@@ -231,7 +267,9 @@ function cpp_js(settings) {
 		},
 		
 		_eval : function(val) {
-			// 6.10.1.2-3
+			var old_val = val;
+		
+			// see C99/6.10.1.2-3
 			
 			console.log('_eval: ' + val);
 			
@@ -262,7 +300,12 @@ function cpp_js(settings) {
 			var defined = this.defined;
 			
 			// what remains should be safe to use with eval().
-			var res = !!eval(val);
+			try {
+				var res = !!eval(val);
+			}
+			catch (e) {
+				error("error in expression: " + old_val);
+			}
 			
 			console.log('res: ' + res);
 			return res;
