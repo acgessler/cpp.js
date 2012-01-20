@@ -56,11 +56,9 @@ var predefined = {
 
 pp.define_multiple(predefined);
 
-// Do the same step by step
-pp.define('UNIVERSAL_TRUTH','42');
-pp.undef('DEBUG');
+pp.define("macro_with_args(a,b)","a ## b");
 
-// And query the current state of a particular define
+pp.undef('DEBUG');
 pp.defined('DEBUG'); // => false
 
 // Now invoke the preprocesser on the given text block.

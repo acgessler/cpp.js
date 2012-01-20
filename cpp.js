@@ -88,12 +88,15 @@ function cpp_js(settings) {
 		"(\\w+)[ \t]*(.*?)[ \t]*$","m"
 	);
 	
-	// (match identifiers according to 6.4.2.1, do not match 'defined',
-	// do not match quote strings either)
+	// match identifiers according to 6.4.2.1, do not match 'defined',
+	// do not match quote strings either
 	var is_identifier_re = /\b(d(?!efined)|[a-ce-zA-Z_])\w*(?![\w"])/g;
 	
 	// same, but checks if the entire string is an identifier
 	var is_identifier_only_re = /^(d(?!efined)|[a-ce-zA-Z_])\w*$/g;
+	
+	// same, but checks if the entire string is a macro
+	var is_macro_only_re = /^((?:d(?!efined)|[a-ce-zA-Z_])\w*)\s*\((.*)\)$/g;
 	
 	// defined <identifier>
 	var defined_no_parens_re = /defined\s+([a-zA-Z_]\w*)/g;
@@ -135,7 +138,7 @@ function cpp_js(settings) {
 		},
 	
 		define : function(k,v) {
-			if (!this._is_identifier(k)) {
+			if (!this._is_identifier(k) && !this._is_macro(k)) {
 				settings.error_func("not a valid preprocessor identifier: '" + k + "'");
 			}
 			state[k] = v || '';
@@ -151,10 +154,82 @@ function cpp_js(settings) {
 			}
 		},
 		
-		subs : function(text) {
+		subs : function(text, error) {
+			error = error || settings.error_func;
+		
 			var new_text = text;
 			for (var k in state) {
-				new_text = new_text.replace(new RegExp("\\b"+k+"\\b"),state[k]);
+				if (this._is_macro(k)) {
+					var m = is_macro_only_re.exec(k);
+					is_macro_only_re.lastIndex = 0;
+					
+					var old_text = new_text;
+					
+					var params = m[2].split(',');
+					var pat = new RegExp(m[1] + '\\s*\\(','g');
+					
+					var m_found;
+					while (m_found = pat.exec(new_text)) {
+						var params_found = [], last, tmp, nest = -1;
+						var full;
+						
+						// here macro invocations may be nested, so a regex is not
+						// sufficient to parse this.
+						for (var i = m_found.index; i < new_text.length; ++i) {
+							if (new_text[i] == ',' && !nest) {
+								if (last == i || !(tmp = trim(new_text.slice(last, i)))) {
+									error('unexpected token: ,');
+								}
+								params_found.push(tmp);
+								last = i+1;
+							}
+							
+							if ( new_text[i] == '(' ) {
+								if (++nest === 0) {
+									last = i+1;
+								}
+							}
+							else if ( new_text[i] == ')' ) {
+								if(--nest === -1) {
+									pat.lastIndex = i+1;
+									
+									if (last == i || !(tmp = trim(new_text.slice(last, i)))) {
+										error('unexpected token: )');
+									}
+									params_found.push(tmp);
+									break;
+								}
+							}
+						}
+						
+						if (nest !== -1) {
+							error('unbalanced parentheses, expected )');
+						}
+							
+						if (params_found.length != params.length) {
+							error('illegal invocation of macro ' + k + ', expected ' + 
+								params.length + ' parameters but got ' + 
+								params_found.length);
+						}
+						
+						var repl = state[k];
+						for (var  i = 0; i < params.length; ++i) {
+							repl = repl.replace(new RegExp("\\b"+params[i]+"\\b"),
+								params_found[i]);
+						}
+						
+						var patIndex = pat.lastIndex;
+						var sub = new_text.slice(0, m_found.index) + repl;
+						pat.lastIndex = sub.length;
+						
+						new_text = sub + new_text.slice(patIndex);
+					//	console.log('replacement for ' + old_text + ' is ' + new_text);
+					};
+				}
+				else {
+					// no arguments, plain substitution
+					new_text = new_text.replace(new RegExp("\\b"+k+"\\b"),state[k]);
+				}
 			}
 			
 			// keep substituting until no further substitutions are possible
@@ -190,12 +265,13 @@ function cpp_js(settings) {
 			var process_directive = function(command, elem) {
 				switch (command) {
 				case "define":
-					var e = elem.split(/\s/,2);
+					var e = elem.split(/\s/);
 					e[0] = trim(e[0]);
 					if (self.defined(e[0])) {
 						warn(e[0] + ' redefined');
 					}
-					self.define(e[0], e[1] ? trim(e[1]) : undefined);
+					self.define(e[0], e.length > 1 ? trim(e.slice(1).join(' ')) 
+						: undefined);
 					break;
 					
 				case "undef":
@@ -267,8 +343,7 @@ function cpp_js(settings) {
 			var process_block = function(i, elem) {
 				var elem = blocks[i];
 				switch(i % 3) {
-				// code line, apply macro substitutions and copy
-				// to output.
+				// code line, apply macro substitutions and copy to output.
 				case 0:
 					line += elem.split('\n').length-1;
 					if (!ifs_failed) {
@@ -280,8 +355,8 @@ function cpp_js(settings) {
 					//++line;
 					command = elem;
 					break;
-				// the rest of the preprocessor line, self is where
-				// expression evaluation happens
+				// the rest of the preprocessor line, this is where expression 
+				// evaluation happens
 				case 2:
 					var done = true;
 					switch (command) {
@@ -291,8 +366,7 @@ function cpp_js(settings) {
 								error("expected identifier after " + 
 									command);
 							}
-							// translate ifdef/ifndef to regular if by 
-							// using defined()
+							// translate ifdef/ifndef to regular if by using defined()
 							elem = "(defined " + elem + ")";
 							if(command == 'ifndef') {
 								elem = '!' + elem;
@@ -394,8 +468,25 @@ function cpp_js(settings) {
 		
 		_is_identifier : function(identifier) {
 			// Note: important to use match() because test() would update
-			// the 'lastIndex' regexp property.
+			// the 'lastIndex' property on the regex.
 			return !!identifier.match(is_identifier_only_re);
+		},
+		
+		_is_macro : function(macro) {
+			var m = is_macro_only_re.exec(macro);
+			is_macro_only_re.lastIndex = 0;
+			if (!m) {
+				return false;
+			}
+			//console.log(m);
+			var params = m[2].split(',');
+			for (var i = 0; i < params.length; ++i) {
+				var t = trim(params[i]);
+				if(!this._is_identifier(t) && !this._is_macro(t)) {
+					return false;
+				}
+			}
+			return true;
 		},
 		
 		_eval : function(val, error, warn) {
