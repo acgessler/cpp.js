@@ -160,71 +160,7 @@ function cpp_js(settings) {
 			var new_text = text;
 			for (var k in state) {
 				if (this._is_macro(k)) {
-					var m = is_macro_only_re.exec(k);
-					is_macro_only_re.lastIndex = 0;
-					
-					var old_text = new_text;
-					
-					var params = m[2].split(',');
-					var pat = new RegExp(m[1] + '\\s*\\(','g');
-					
-					var m_found;
-					while (m_found = pat.exec(new_text)) {
-						var params_found = [], last, tmp, nest = -1;
-						var full;
-						
-						// here macro invocations may be nested, so a regex is not
-						// sufficient to parse this.
-						for (var i = m_found.index; i < new_text.length; ++i) {
-							if (new_text[i] == ',' && !nest) {
-								if (last == i || !(tmp = trim(new_text.slice(last, i)))) {
-									error('unexpected token: ,');
-								}
-								params_found.push(tmp);
-								last = i+1;
-							}
-							
-							if ( new_text[i] == '(' ) {
-								if (++nest === 0) {
-									last = i+1;
-								}
-							}
-							else if ( new_text[i] == ')' ) {
-								if(--nest === -1) {
-									pat.lastIndex = i+1;
-									
-									if (last == i || !(tmp = trim(new_text.slice(last, i)))) {
-										error('unexpected token: )');
-									}
-									params_found.push(tmp);
-									break;
-								}
-							}
-						}
-						
-						if (nest !== -1) {
-							error('unbalanced parentheses, expected )');
-						}
-							
-						if (params_found.length != params.length) {
-							error('illegal invocation of macro ' + k + ', expected ' + 
-								params.length + ' parameters but got ' + 
-								params_found.length);
-						}
-						
-						var repl = state[k];
-						for (var  i = 0; i < params.length; ++i) {
-							repl = repl.replace(new RegExp("\\b"+params[i]+"\\b"),
-								params_found[i]);
-						}
-						
-						var patIndex = pat.lastIndex;
-						var sub = new_text.slice(0, m_found.index) + repl;
-						pat.lastIndex = sub.length;
-						
-						new_text = sub + new_text.slice(patIndex);
-					//	console.log('replacement for ' + old_text + ' is ' + new_text);
-					};
+					new_text = this.subs_macro(new_text, k, error);
 				}
 				else {
 					// no arguments, plain substitution
@@ -235,6 +171,76 @@ function cpp_js(settings) {
 			// keep substituting until no further substitutions are possible
 			return new_text == text ? new_text : this.subs(new_text);
 		}, 
+		
+		subs_macro : function(new_text, k, error) {
+			var m = is_macro_only_re.exec(k);
+			is_macro_only_re.lastIndex = 0;
+			
+			var old_text = new_text;
+			
+			var params = m[2].split(',');
+			var pat = new RegExp(m[1] + '\\s*\\(','g');
+			
+			var m_found;
+			while (m_found = pat.exec(new_text)) {
+				var params_found = [], last, tmp, nest = -1;
+				var full;
+				
+				// here macro invocations may be nested, so a regex is not
+				// sufficient to "parse" this.
+				for (var i = m_found.index; i < new_text.length; ++i) {
+					if (new_text[i] == ',' && !nest) {
+						if (last == i || !(tmp = trim(new_text.slice(last, i)))) {
+							error('unexpected token: ,');
+						}
+						params_found.push(tmp);
+						last = i+1;
+					}
+					
+					if ( new_text[i] == '(' ) {
+						if (++nest === 0) {
+							last = i+1;
+						}
+					}
+					else if ( new_text[i] == ')' ) {
+						if(--nest === -1) {
+							pat.lastIndex = i+1;
+							
+							if (last == i || !(tmp = trim(new_text.slice(last,
+							i)))) {
+								error('unexpected token: )');
+							}
+							params_found.push(tmp);
+							break;
+						}
+					}
+				}
+				
+				if (nest !== -1) {
+					error('unbalanced parentheses, expected )');
+				}
+					
+				if (params_found.length != params.length) {
+					error('illegal invocation of macro ' + k + ', expected ' + 
+						params.length + ' parameters but got ' + 
+						params_found.length);
+				}
+				
+				var repl = state[k];
+				for (var  i = 0; i < params.length; ++i) {
+					repl = repl.replace(new RegExp("\\b"+params[i]+"\\b"),
+						params_found[i]);
+				}
+				
+				var patIndex = pat.lastIndex;
+				var sub = new_text.slice(0, m_found.index) + repl;
+				pat.lastIndex = sub.length;
+				
+				new_text = sub + new_text.slice(patIndex);
+			//	console.log('replacement for ' + old_text + ' is ' + new_text);
+			};
+			return new_text;
+		},
 	
 		run : function(text, name) {
 			name = name || '<unnamed>';
@@ -521,7 +527,7 @@ function cpp_js(settings) {
 			val = val.replace(defined_no_parens_re,'defined($1)');
 			val = val.replace(defined_re,' __defined_magic_$1_ ');
 			
-			val = this.subs(val);
+			val = this.subs(val, error);
 		
 			// re-substitute defined() terms and quote the argument
 			val = val.replace(defined_magic_sentinel_re,'defined("$1")');
