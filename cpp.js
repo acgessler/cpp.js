@@ -112,6 +112,12 @@ function cpp_js(settings) {
 	// temporarily exclude operands to defined from macro substitution.
 	var defined_magic_sentinel_re = /__defined_magic_([a-zA-Z_]\w*)_/;
 	
+	// Match hexadecimal, octal and decimal integer literals with or
+	// without L,l,U,u suffix and separate all components.
+	var is_integer_re = /\b(\+|-|)(0|0x|)([1-9a-f][0-9a-f]*|0)([ul]*)\b/ig;
+	
+	
+	
 	var state = {};
 	
 	return {
@@ -305,6 +311,9 @@ function cpp_js(settings) {
 			// see C99/6.10.1.2-3
 			
 			console.log('_eval: ' + val);
+			
+			// drop the L,l,U,u suffixes for integer literals
+			val = val.replace(is_integer_re,'$1$2$3');
 			
 			// macro substitution - but do not touch unary operands to 'defined',
 			// this is done by substituting a safe sentinel value (which starts
