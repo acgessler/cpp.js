@@ -196,17 +196,22 @@ function cpp_js(settings) {
 			}
 		},
 		
-		subs : function(text, error, warn) {
+		subs : function(text, blacklist, error, warn) {
 			error = error || settings.error_func;
 			warn = warn || settings.warn_func;
+			blacklist = blacklist || {};
 		
 			var new_text = text;
 			for (var k in state) {
+				if (k in blacklist) {
+					continue;
+				}
+				
 				if (this._is_macro(k)) {
-					new_text = this._subs_macro(new_text, k, error, warn);
+					new_text = this._subs_macro(new_text, k, blacklist, error, warn);
 				}
 				else {
-					new_text = this._subs_simple(new_text, k, error, warn);
+					new_text = this._subs_simple(new_text, k, blacklist, error, warn);
 				}
 			}
 			
@@ -589,66 +594,85 @@ function cpp_js(settings) {
 			return s;
 		},
 		
-		_subs_simple : function(new_text, k, error, warn) {
+		_update_blacklist : function(blacklist_in, macro_name) {
+			var blacklist = {};
+			blacklist[macro_name] = 1;
+			
+			if (blacklist_in) {
+				for(var k in blacklist_in) {
+					blacklist[k]=1;
+				}
+			}
+			return blacklist;
+		},
+		
+		_subs_simple : function(text, macro_name, blacklist_in, error, warn) {
 			// no macro but just a parameterless substitution
-			var rex = new RegExp("\\b"+k+"\\b",'g');
+			var rex = new RegExp("\\b"+macro_name+"\\b",'g');
 			var m_found;
 			
+			// build updated blacklist to exclude this macro from recursive 
+			// substitutions (which would potentially lead to infinite
+			// recursion and are thus forbidden by the standard, 6.10.3.4)
+			var blacklist = this._update_blacklist(blacklist_in, macro_name);
+			
 			var out_pieces = [];
-			while (m_found = rex.exec(new_text)) {
+			while (m_found = rex.exec(text)) {
 			
 				// handle # and ## operator
-				var repl = this._handle_ops(state[k], error, warn);
+				var repl = this._handle_ops(state[macro_name], error, warn);
 				
 				
 				// XXX prevent substitution of this macro
-				repl = this.subs( repl, error, warn);
+				repl = this.subs( repl, blacklist, error, warn);
 				
-				out_pieces.push(new_text.slice(0, m_found.index));
+				out_pieces.push(text.slice(0, m_found.index));
 				out_pieces.push(repl);
 				
-				new_text = new_text.slice(m_found.index + m_found[0].length);
+				text = text.slice(m_found.index + m_found[0].length);
 				rex.lastIndex = 0;
 			}
 			if (!out_pieces.length) {
-				return new_text;
+				return text;
 			}
-			out_pieces.push(new_text.slice(rex.lastIndex));
+			out_pieces.push(text.slice(rex.lastIndex));
 			return out_pieces.join('');
 		},
 		
-		_subs_macro : function(new_text, k, error, warn) {
+		_subs_macro : function(text, macro_name, blacklist_in, error, warn) {
+			var info = this._get_macro_info(macro_name);
 			
-			var info = this._get_macro_info(k);
-			var old_text = new_text;
+			// See _subs_simple()
+			var blacklist = this._update_blacklist(blacklist_in, macro_name);
+			var old_text = text;
 			
 			var m_found;
 			
 			var out_pieces = [];
-			while (m_found = info.pat.exec(new_text)) {
+			while (m_found = info.pat.exec(text)) {
 				var params_found = [], last, tmp, nest = -1;
 				var full;
 				
 				// here macro invocations may be nested, so a regex is not
 				// sufficient to "parse" this.
-				for (var i = m_found.index; i < new_text.length; ++i) {
-					if (new_text[i] == ',' && !nest) {
-						if (last == i || !(tmp = trim(new_text.slice(last, i)))) {
+				for (var i = m_found.index; i < text.length; ++i) {
+					if (text[i] == ',' && !nest) {
+						if (last == i || !(tmp = trim(text.slice(last, i)))) {
 							error('unexpected token: ,');
 						}
 						params_found.push(tmp);
 						last = i+1;
 					}
 					
-					if ( new_text[i] == '(' ) {
+					if ( text[i] == '(' ) {
 						if (++nest === 0) {
 							last = i+1;
 						}
 					}
-					else if ( new_text[i] == ')' ) {
+					else if ( text[i] == ')' ) {
 						if(--nest === -1) {
 							
-							if (last == i || !(tmp = trim(new_text.slice(last,
+							if (last == i || !(tmp = trim(text.slice(last,
 							i)))) {
 								error('unexpected token: )');
 							}
@@ -664,8 +688,8 @@ function cpp_js(settings) {
 				}
 					
 				if (params_found.length != info.params.length) {
-					error('illegal invocation of macro ' + k + ', expected ' + 
-						params.length + ' parameters but got ' + 
+					error('illegal invocation of macro ' + macro_name + ', expected ' + 
+						info.params.length + ' parameters but got ' + 
 						params_found.length);
 				}
 				
@@ -673,10 +697,10 @@ function cpp_js(settings) {
 				// PRIOR to doing this (6.10.3.1). We need, however, to 
 				// exclude all arguments directly preceeded or succeeded by
 				// either the stringization or the token concatenation operator
-				var repl = state[k];
+				var repl = state[macro_name];
 				
 				for (var  i = 0; i < info.params.length; ++i) {
-					var param_subs = this.subs( params_found[i], error, warn);
+					var param_subs = this.subs( params_found[i], blacklist, error, warn);
 					
 					var rex = new RegExp("\\b"+info.params[i]+"\\b");
 					var ignore = false, pieces = [], m;
@@ -715,17 +739,17 @@ function cpp_js(settings) {
 				repl = this._handle_ops(repl, error, warn);
 				
 				// and re-scan the replacement list (6.10.3.4)
-				repl = this.subs( repl, error, warn);
+				repl = this.subs( repl, blacklist, error, warn);
 				
-				out_pieces.push(new_text.slice(0, m_found.index));
+				out_pieces.push(text.slice(0, m_found.index));
 				out_pieces.push(repl);
-				new_text = new_text.slice( last );
+				text = text.slice( last );
 				info.pat.lastIndex = 0;
 			}
 			if (!out_pieces.length) {
-				return new_text;
+				return text;
 			}
-			out_pieces.push(new_text);
+			out_pieces.push(text);
 			return out_pieces.join('');
 		},
 		
@@ -761,7 +785,7 @@ function cpp_js(settings) {
 			val = val.replace(defined_no_parens_re,'defined($1)');
 			val = val.replace(defined_re,' __defined_magic_$1_ ');
 			
-			val = this.subs(val, error);
+			val = this.subs(val, {}, error, warn);
 		
 			// re-substitute defined() terms and quote the argument
 			val = val.replace(defined_magic_sentinel_re,'defined("$1")');
