@@ -323,7 +323,7 @@ function cpp_js(settings) {
 				case 0:
 					line += elem.split('\n').length-1;
 					if (!ifs_failed) {
-						out[outi++] = self.subs(elem);
+						out[outi++] = self.subs(elem, error, warn);
 					}
 					break;
 				// preprocessor statement, such as ifdef, endif, ..
