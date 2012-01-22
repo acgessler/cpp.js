@@ -217,13 +217,37 @@ function cpp_js(settings) {
 			var process_directive = function(command, elem) {
 				switch (command) {
 				case "define":
-					var e = elem.split(/\s/);
-					e[0] = trim(e[0]);
-					if (self.defined(e[0])) {
-						warn(e[0] + ' redefined');
+					var head, tail;
+					
+					elem = trim(elem);
+					
+					var par_count = 0;
+					for (var j = 0; j < elem.length; ++j) {
+						if (elem[j] == '(') {
+							++par_count;
+						}
+						else if (elem[j] == ')') {
+							--par_count;
+						}
+						else if (elem[j].match(/\s/) && !par_count) {
+							head = elem.slice(0,j);
+							tail = trim( elem.slice(j) );
+							break;
+						}
 					}
-					self.define(e[0], e.length > 1 ? trim(e.slice(1).join(' ')) 
-						: undefined);
+					
+					if (par_count) {
+						error('unbalanced parentheses in define: ' + elem);
+					}
+					
+					if (head === undefined) {
+						head = elem;
+					}
+					
+					if (self.defined(head)) {
+						warn(head + ' redefined');
+					}
+					self.define(head, tail);
 					break;
 					
 				case "undef":
