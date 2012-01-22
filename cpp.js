@@ -498,10 +498,16 @@ function cpp_js(settings) {
 			is_macro_only_re.lastIndex = 0;
 			
 			var params = m[2].split(',');
-			for (var i = 0; i < params.length; ++i) {
-				var t = params[i] = trim(params[i]);
-				if(!this._is_identifier(t) && !this._is_macro(t)) {
-					return null;
+			if (params.length === 1 && !trim(params[0])) {
+				// parameterless macro (i.e. #define p () )
+				params = [];
+			}
+			else {
+				for (var i = 0; i < params.length; ++i) {
+					var t = params[i] = trim(params[i]);
+					if(!this._is_identifier(t) && !this._is_macro(t)) {
+						return null;
+					}
 				}
 			}
 			
