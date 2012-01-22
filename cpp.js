@@ -143,6 +143,10 @@ function cpp_js(settings) {
 			if (!this._is_identifier(k) && !macro) {
 				settings.error_func("not a valid preprocessor identifier: '" + k + "'");
 			}
+			
+			if (typeof v === 'number') {
+				v = v.toString(10);
+			}
 	
 			if (macro) {
 				k = macro.name;
