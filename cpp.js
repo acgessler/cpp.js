@@ -2,7 +2,7 @@
 
 cpp.js - Simple implementation of the C Preprocessor in Javascript
 
-Copyright (c) 2011, Alexander C. Gessler
+Copyright (c) 2011, Alexander Christoph Gessler
 All rights reserved.
 
 Redistribution and use of this software in source and binary forms, 
@@ -18,10 +18,10 @@ following conditions are met:
   following disclaimer in the documentation and/or other
   materials provided with the distribution.
 
-* Neither the name of the ASSIMP team, nor the names of its
+* Neither the name of the cpp.js team, nor the names of its
   contributors may be used to endorse or promote products
   derived from this software without specific prior
-  written permission of the ASSIMP Development Team.
+  written permission of the cpp.js Development Team.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
 "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
@@ -126,6 +126,7 @@ function cpp_js(settings) {
 	
 	
 	var state = {};
+	var macro_cache = {};
 	
 	return {
 	
@@ -138,8 +139,20 @@ function cpp_js(settings) {
 		},
 	
 		define : function(k,v) {
-			if (!this._is_identifier(k) && !this._is_macro(k)) {
+			var macro = this._get_macro_info(k);
+			if (!this._is_identifier(k) && !macro) {
 				settings.error_func("not a valid preprocessor identifier: '" + k + "'");
+			}
+	
+			if (macro) {
+				k = macro.name;
+				
+				// This inserts the macro into the macro cache, which
+				// holds pre-parsed data to simplify substitution.
+				macro_cache[k] = macro;
+			}
+			else if (k in macro_cache) {
+				delete macro_cache[k];
 			}
 			state[k] = v || '';
 		},
@@ -154,93 +167,22 @@ function cpp_js(settings) {
 			}
 		},
 		
-		subs : function(text, error) {
+		subs : function(text, error, warn) {
 			error = error || settings.error_func;
+			warn = warn || settings.warn_func;
 		
 			var new_text = text;
 			for (var k in state) {
 				if (this._is_macro(k)) {
-					new_text = this.subs_macro(new_text, k, error);
+					new_text = this._subs_macro(new_text, k, error, warn);
 				}
 				else {
-					// no arguments, plain substitution
-					new_text = new_text.replace(new RegExp("\\b"+k+"\\b"),state[k]);
+					new_text = this._subs_simple(new_text, k, error, warn);
 				}
 			}
 			
-			// keep substituting until no further substitutions are possible
-			return new_text == text ? new_text : this.subs(new_text);
-		}, 
-		
-		subs_macro : function(new_text, k, error) {
-			var m = is_macro_only_re.exec(k);
-			is_macro_only_re.lastIndex = 0;
-			
-			var old_text = new_text;
-			
-			var params = m[2].split(',');
-			var pat = new RegExp(m[1] + '\\s*\\(','g');
-			
-			var m_found;
-			while (m_found = pat.exec(new_text)) {
-				var params_found = [], last, tmp, nest = -1;
-				var full;
-				
-				// here macro invocations may be nested, so a regex is not
-				// sufficient to "parse" this.
-				for (var i = m_found.index; i < new_text.length; ++i) {
-					if (new_text[i] == ',' && !nest) {
-						if (last == i || !(tmp = trim(new_text.slice(last, i)))) {
-							error('unexpected token: ,');
-						}
-						params_found.push(tmp);
-						last = i+1;
-					}
-					
-					if ( new_text[i] == '(' ) {
-						if (++nest === 0) {
-							last = i+1;
-						}
-					}
-					else if ( new_text[i] == ')' ) {
-						if(--nest === -1) {
-							pat.lastIndex = i+1;
-							
-							if (last == i || !(tmp = trim(new_text.slice(last,
-							i)))) {
-								error('unexpected token: )');
-							}
-							params_found.push(tmp);
-							break;
-						}
-					}
-				}
-				
-				if (nest !== -1) {
-					error('unbalanced parentheses, expected )');
-				}
-					
-				if (params_found.length != params.length) {
-					error('illegal invocation of macro ' + k + ', expected ' + 
-						params.length + ' parameters but got ' + 
-						params_found.length);
-				}
-				
-				var repl = state[k];
-				for (var  i = 0; i < params.length; ++i) {
-					repl = repl.replace(new RegExp("\\b"+params[i]+"\\b"),
-						params_found[i]);
-				}
-				
-				var patIndex = pat.lastIndex;
-				var sub = new_text.slice(0, m_found.index) + repl;
-				pat.lastIndex = sub.length;
-				
-				new_text = sub + new_text.slice(patIndex);
-			//	console.log('replacement for ' + old_text + ' is ' + new_text);
-			};
 			return new_text;
-		},
+		}, 
 	
 		run : function(text, name) {
 			name = name || '<unnamed>';
@@ -479,20 +421,211 @@ function cpp_js(settings) {
 		},
 		
 		_is_macro : function(macro) {
-			var m = is_macro_only_re.exec(macro);
-			is_macro_only_re.lastIndex = 0;
-			if (!m) {
-				return false;
+			return this._get_macro_info(macro) != null;
+		},
+		
+		_get_macro_info : function(k) {
+			if (macro_cache[k]) {
+				return macro_cache[k];
 			}
-			//console.log(m);
+		
+			var m = is_macro_only_re.exec(k);
+			if (!m) {
+				return null;
+			}
+			is_macro_only_re.lastIndex = 0;
+			
 			var params = m[2].split(',');
 			for (var i = 0; i < params.length; ++i) {
-				var t = trim(params[i]);
+				var t = params[i] = trim(params[i]);
 				if(!this._is_identifier(t) && !this._is_macro(t)) {
-					return false;
+					return null;
 				}
 			}
-			return true;
+			
+			var pat = new RegExp(m[1] + '\\s*\\(','g');
+			
+			return {
+				params:params,
+				pat:pat,
+				name:m[1],
+				full:k
+			};
+		},
+		
+		_handle_ops : function(s, error, warn) {
+			// the replacement itself can be done with a regex, but
+			// checking for errors is easier this way.
+			var op, last = 0; 
+			while((op = s.indexOf('##',last)) != -1) {
+				var left, right, err = false;
+				for (var i = op-1; i >= 0; --i) {
+					if (!s[i].match(/\s/)) {
+						err = !s[i].match(/\w/);
+						left = s[i];
+						break;
+					}
+				}
+				for (var i = op+2; i < s.length; ++i) {
+					if (!s[i].match(/\s/)) {
+						err = err || !s[i].match(/\w/);
+						right = s[i];
+						break;
+					}
+				}
+				
+				if (err) {
+					error('pasting "' + left + '" and "' + right + 
+						'" does not give a valid preprocessing token'
+					);
+				}
+				last = op + 2;
+			}
+			
+			// XXX error checking for '#'
+			//console.log(s);
+			s = s.replace(/(\w*)\s*##\s*(\w*)/g,'$1$2');
+			return s.replace(/#\s*(\w*)/g,'"$1"');
+		},
+		
+		_subs_simple : function(new_text, k, error, warn) {
+			// no macro but just a parameterless substitution
+			var rex = new RegExp("\\b"+k+"\\b",'g');
+			var m_found;
+			
+			var out_pieces = [];
+			while (m_found = rex.exec(new_text)) {
+			
+				// handle # and ## operator
+				var repl = this._handle_ops(state[k], error, warn);
+				
+				
+				// XXX prevent substitution of this macro
+				repl = this.subs( repl, error, warn);
+				
+				out_pieces.push(new_text.slice(0, m_found.index));
+				out_pieces.push(repl);
+				
+				new_text = new_text.slice(m_found.index + m_found[0].length);
+				rex.lastIndex = 0;
+			}
+			if (!out_pieces.length) {
+				return new_text;
+			}
+			out_pieces.push(new_text.slice(rex.lastIndex));
+			return out_pieces.join('');
+		},
+		
+		_subs_macro : function(new_text, k, error, warn) {
+			
+			var info = this._get_macro_info(k);
+			var old_text = new_text;
+			
+			var m_found;
+			
+			var out_pieces = [];
+			while (m_found = info.pat.exec(new_text)) {
+				var params_found = [], last, tmp, nest = -1;
+				var full;
+				
+				// here macro invocations may be nested, so a regex is not
+				// sufficient to "parse" this.
+				for (var i = m_found.index; i < new_text.length; ++i) {
+					if (new_text[i] == ',' && !nest) {
+						if (last == i || !(tmp = trim(new_text.slice(last, i)))) {
+							error('unexpected token: ,');
+						}
+						params_found.push(tmp);
+						last = i+1;
+					}
+					
+					if ( new_text[i] == '(' ) {
+						if (++nest === 0) {
+							last = i+1;
+						}
+					}
+					else if ( new_text[i] == ')' ) {
+						if(--nest === -1) {
+							
+							if (last == i || !(tmp = trim(new_text.slice(last,
+							i)))) {
+								error('unexpected token: )');
+							}
+							last = i+1;
+							params_found.push(tmp);
+							break;
+						}
+					}
+				}
+				
+				if (nest !== -1) {
+					error('unbalanced parentheses, expected )');
+				}
+					
+				if (params_found.length != info.params.length) {
+					error('illegal invocation of macro ' + k + ', expected ' + 
+						params.length + ' parameters but got ' + 
+						params_found.length);
+				}
+				
+				// insert arguments into replacement list, but evaluate them
+				// PRIOR to doing this (6.10.3.1). We need, however, to 
+				// exclude all arguments directly preceeded or succeeded by
+				// either the stringization or the token concatenation operator
+				var repl = state[k];
+				
+				for (var  i = 0; i < info.params.length; ++i) {
+					var param_subs = this.subs( params_found[i], error, warn);
+					
+					var rex = new RegExp("\\b"+info.params[i]+"\\b");
+					var ignore = false, pieces = [], m;
+					for (var j = 0; j < repl.length; ++j) {
+						if (repl[j] == '#') {
+							ignore = true;
+						}
+						else if ((m = rex.exec(repl))) {
+							if (!ignore) {
+								for (var k = m.index + m[0].length; k < repl.length; ++k) {
+									if (repl[k] == '#') {
+										ignore = true;
+									}
+									else if (!repl[k].match(/\s/)) {
+										break;
+									}
+								}
+							}
+						
+							pieces.push(repl.slice(0,m.index));
+							pieces.push(ignore ? params_found[i] : param_subs);
+							repl = repl.slice(m.index + m[0].length);
+							
+							j = -1;
+							ignore = false;
+						}
+						else if (!repl[j].match(/\s/)) {
+							ignore = false;
+						}
+					}
+					pieces.push(repl);
+					repl = pieces.join('');
+				}
+				
+				// handle # and ## operator
+				repl = this._handle_ops(repl, error, warn);
+				
+				// and re-scan the replacement list (6.10.3.4)
+				repl = this.subs( repl, error, warn);
+				
+				out_pieces.push(new_text.slice(0, m_found.index));
+				out_pieces.push(repl);
+				new_text = new_text.slice( last );
+				info.pat.lastIndex = 0;
+			}
+			if (!out_pieces.length) {
+				return new_text;
+			}
+			out_pieces.push(new_text);
+			return out_pieces.join('');
 		},
 		
 		_eval : function(val, error, warn) {
