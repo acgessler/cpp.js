@@ -124,6 +124,31 @@ function cpp_js(settings) {
 	// Grav <included_file> or "included_file"
 	var include_re = /(?:<(.*)>|"(.*)")(.*)/;
 	
+	// List of preprocessing tokens.
+	var pp_special_token_list = {
+		'==':1,
+		'!=':1,
+		'+':1,
+		'-':1,
+		'*':1,
+		'/':1,
+		'%':1,
+		'<=':1,
+		'>=':1,
+		'<':1,
+		'>':1,
+		'=':1,
+		'+=':1,
+		'*=':1,
+		'/=':1,
+		'&=':1,
+		'|=':1,
+		'^=':1,
+		'#':1,
+		'##':1,
+		'->':1
+	};
+	
 	
 	var state = {};
 	var macro_cache = {};
@@ -247,6 +272,11 @@ function cpp_js(settings) {
 					if (self.defined(head)) {
 						warn(head + ' redefined');
 					}
+					
+					if (!self._is_identifier(head) && !self._is_macro(head)) {
+						error("not a valid preprocessor identifier: '" + head + "'");
+					}
+			
 					self.define(head, tail);
 					break;
 					
@@ -452,6 +482,10 @@ function cpp_js(settings) {
 			return this._get_macro_info(macro) != null;
 		},
 		
+		_is_pp_special_token : function(tok) {
+			return trim(tok) in pp_special_token_list;
+		},
+		
 		_get_macro_info : function(k) {
 			if (macro_cache[k]) {
 				return macro_cache[k];
@@ -482,38 +516,71 @@ function cpp_js(settings) {
 		},
 		
 		_handle_ops : function(s, error, warn) {
-			// the replacement itself can be done with a regex, but
-			// checking for errors is easier this way.
-			var op, last = 0; 
+			
+			// 6.10.3.2 "The order of evaluation of # and ## operators 
+			// is unspecified."
+			var op, last = 0, pieces = []; 
 			while((op = s.indexOf('##',last)) != -1) {
-				var left, right, err = false;
+				var left, right;
 				for (var i = op-1; i >= 0; --i) {
 					if (!s[i].match(/\s/)) {
-						err = !s[i].match(/\w/);
-						left = s[i];
+						left = s[i] + (left || '');
+					}
+					else if (left !== undefined) {
 						break;
 					}
 				}
-				for (var i = op+2; i < s.length; ++i) {
-					if (!s[i].match(/\s/)) {
-						err = err || !s[i].match(/\w/);
-						right = s[i];
+				++i;
+				
+				for (var j = op+2; j < s.length; ++j) {
+					if (!s[j].match(/\s/)) {
+						right = (right || '') + s[j];
+					}
+					else if (right !== undefined) {
 						break;
 					}
 				}
 				
-				if (err) {
+				left = trim(left || '');
+				right = trim(right || '');
+				if (!right || !left) {
+					error('## cannot appear at either end of a macro expansion');
+				}
+				
+				// To my reading of the standard, it works like this:
+				// if both sides are *not* preprocessing special tokens,
+				// the concatenation is always ok. Otherwise the result
+				// must be a valid preprocessing special token as well.
+				if ((this._is_pp_special_token(left) || this._is_pp_special_token(right)) && 
+					!this._is_pp_special_token(left + right)) {
 					error('pasting "' + left + '" and "' + right + 
 						'" does not give a valid preprocessing token'
 					);
 				}
-				last = op + 2;
+				
+				// the result of the concatenation is another token, but
+				// we must take care that the '##' token is not treated
+				// as concatenation operator in further replacements.
+				var concat = left + right;
+				if (concat == '##') {
+					concat = pseudo_token_doublesharp;
+				}
+				
+				pieces.push(s.slice(last,i));
+				pieces.push(concat);
+				
+				last = j;
 			}
 			
-			// XXX error checking for '#'
-			//console.log(s);
-			s = s.replace(/(\w*)\s*##\s*(\w*)/g,'$1$2');
-			return s.replace(/#\s*(\w*)/g,'"$1"');
+			if (last < s.length) {
+				pieces.push(s.slice(last));
+			}
+			console.log(pieces);
+			s = pieces.join('');
+			
+			// handle stringization operator
+			//return s.replace(/#\s*(\w*)/g,'"$1"');
+			return s;
 		},
 		
 		_subs_simple : function(new_text, k, error, warn) {
