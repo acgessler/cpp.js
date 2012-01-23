@@ -377,15 +377,15 @@ function cpp_js(settings) {
 					
 					elem = trim(elem);
 					
-					var par_count = 0;
+					var par_count = undefined;
 					for (var j = 0; j < elem.length; ++j) {
 						if (elem[j] == '(') {
-							++par_count;
+							par_count = (par_count || 0) + 1;
 						}
-						else if (elem[j] == ')') {
-							--par_count;
-						}
-						else if (elem[j].match(/\s/) && !par_count) {
+						else if ((elem[j] == ')' && --par_count === 0) || elem[j].match(/\s/) && par_count === undefined) {
+							if (elem[j] == ')') {
+								++j;
+							}
 							head = elem.slice(0,j);
 							tail = trim( elem.slice(j) );
 							break;
@@ -641,7 +641,6 @@ function cpp_js(settings) {
 			
 							pieces.push(new_text.slice(0,idx));
 							pieces.push(pseudo_token_nosubs+k);
-							console.log('safe: ' + k);
 							new_text = new_text.slice(idx+k.length);
 							rex.lastIndex = 0;
 						
@@ -651,13 +650,11 @@ function cpp_js(settings) {
 									blacklist[kk] -= idx+k.length;
 								}
 							};
-							console.log(blacklist);
 							break;
 						}
 						else {
 							delete blacklist[k];
 						}
-						console.log('trysub: ' + k + '>' + idx);
 						
 						var sub;
 						if (this._is_macro(k)) {
@@ -671,15 +668,11 @@ function cpp_js(settings) {
 							);
 						}
 						if (sub === null) {
-						console.log('subfail');
 							continue;
 						}
 						
 						// handle # and ## operator
 						sub[0] = this._handle_ops(sub[0], error, warn);
-						
-						console.log('subs ' + new_text.slice(m_boundary.index,m_boundary.index+sub[1]) + ' by ' + sub[0]);
-						console.log(new_text.slice(m_boundary.index,m_boundary.index+sub[1]));
 						
 						// XXX a bit too expensive ... but not too easy to avoid.
 						pieces.push(new_text.slice(0,idx));
@@ -695,10 +688,9 @@ function cpp_js(settings) {
 						
 						// rescan this string, but keep the macro that we just replaced
 						// blacklisted until we're beyond the replacement. This 
-						// prevents infinite recursion.
-			
-						console.log('G BLACKlist: ' + blacklist['g']);
-						
+						// prevents infinite recursion and is also mandated by the
+						// standard and crucial for proper evaluation of several of
+						// the ... evil samples.
 						blacklist[k] = sub[0].length;
 						break;
 					}
@@ -921,7 +913,6 @@ function cpp_js(settings) {
 				return null;
 			}
 			
-			console.log('match for ' + macro_name);
 			var params_found = [], last, nest = -1, in_string = false;
 			
 			// here macro invocations may be nested, so a regex is not
