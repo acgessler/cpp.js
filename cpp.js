@@ -127,6 +127,13 @@ function cpp_js(settings) {
 	// Magic token to signify the '##' token (to keep it from being
 	// treated as the operator of the same signature).
 	var pseudo_token_doublesharp = '__doublesharp_magic__';
+	var is_pseudo_token_doublesharp = new RegExp(pseudo_token_doublesharp,'g');
+	
+	// Magic token to signify the ' ' token (to keep it from being
+	// treated as token boundary).
+	var pseudo_token_space = '__whitespace_magic__';
+	var is_pseudo_token_space = new RegExp(pseudo_token_space,'g');
+
 	
 	// List of preprocessing tokens.
 	var pp_special_token_list = {
@@ -440,12 +447,12 @@ function cpp_js(settings) {
 			return this._result(out, state);
 		},
 		
-		subs : function(text, blacklist, error, warn, nest) {
+		subs : function(text, blacklist, error, warn, nest_sub) {
 			error = error || settings.error_func;
 			warn = warn || settings.warn_func;
 			
 			blacklist = blacklist || {};
-			nest = nest || 0;
+			nest_sub = nest_sub || 0;
 		
 			var new_text = text;
 			for (var k in state) {
@@ -455,21 +462,22 @@ function cpp_js(settings) {
 				
 				if (this._is_macro(k)) {
 					new_text = this._subs_macro(new_text, k, blacklist, 
-						error, warn, nest
+						error, warn, nest_sub
 					);
 				}
 				else {
 					new_text = this._subs_simple(new_text, k, blacklist, 
-						error, warn, nest
+						error, warn, nest_sub
 					);
 				}
 			}
 			
 			// if macro substitution is complete, re-introduce any
 			// '##' tokens previously substituted to keep them from 
-			// being treated as operators.
-			if (!nest) {
-				new_text = new_text.replace(pseudo_token_doublesharp,'##');
+			// being treated as operators. Same for spaces.
+			if (!nest_sub) {
+				new_text = new_text.replace(is_pseudo_token_doublesharp,'##');
+				new_text = new_text.replace(is_pseudo_token_space,' ');
 			}
 			
 			return new_text;
@@ -621,7 +629,7 @@ function cpp_js(settings) {
 			return blacklist;
 		},
 		
-		_subs_simple : function(text, macro_name, blacklist_in, error, warn, nest) {
+		_subs_simple : function(text, macro_name, blacklist_in, error, warn, nest_sub) {
 			// no macro but just a parameterless substitution
 			var rex = new RegExp("\\b"+macro_name+"\\b",'g');
 			var m_found;
@@ -638,7 +646,7 @@ function cpp_js(settings) {
 				var repl = this._handle_ops(state[macro_name], error, warn);
 				
 				// re-scan the replacement tokens (6.10.3.4)
-				repl = this.subs( repl, blacklist, error, warn, nest + 1);
+				repl = this.subs( repl, blacklist, error, warn, nest_sub + 1);
 				
 				out_pieces.push(text.slice(0, m_found.index));
 				out_pieces.push(repl);
@@ -653,7 +661,7 @@ function cpp_js(settings) {
 			return out_pieces.join('');
 		},
 		
-		_subs_macro : function(text, macro_name, blacklist_in, error, warn, nest) {
+		_subs_macro : function(text, macro_name, blacklist_in, error, warn, nest_sub) {
 			var info = this._get_macro_info(macro_name);
 			
 			// See _subs_simple()
@@ -700,11 +708,18 @@ function cpp_js(settings) {
 				if (nest !== -1) {
 					error('unbalanced parentheses, expected )');
 				}
-					
+			
 				if (params_found.length != info.params.length) {
 					error('illegal invocation of macro ' + macro_name + ', expected ' + 
 						info.params.length + ' parameters but got ' + 
 						params_found.length);
+				}
+				
+				// macro parameters may potentially be empty and they may 
+				// contain spaces, which are generally preserved. So substitute
+				// them by a magic replacement string.
+				for (var i = 0; i < params_found.length; ++i) {
+					params_found[i] = params_found[i].replace(/\s/g,pseudo_token_space);
 				}
 				
 				// insert arguments into replacement list, but evaluate them
@@ -714,7 +729,7 @@ function cpp_js(settings) {
 				var repl = state[macro_name];
 				
 				for (var  i = 0; i < info.params.length; ++i) {
-					var param_subs = this.subs( params_found[i], blacklist, error, warn, nest + 1);
+					var param_subs = this.subs( params_found[i], blacklist, error, warn, nest_sub + 1);
 					
 					var rex = new RegExp("\\b"+info.params[i]+"\\b");
 					var ignore = false, pieces = [], m;
@@ -753,7 +768,7 @@ function cpp_js(settings) {
 				repl = this._handle_ops(repl, error, warn);
 				
 				// and re-scan the replacement list (6.10.3.4)
-				repl = this.subs( repl, blacklist, error, warn, nest + 1);
+				repl = this.subs( repl, blacklist, error, warn, nest_sub + 1);
 				
 				out_pieces.push(text.slice(0, m_found.index));
 				out_pieces.push(repl);
