@@ -37,9 +37,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 function cpp_js(settings) {
+	"use strict";
 
-	// http://blog.stevenlevithan.com/archives/faster-trim-javascript
 	var trim = function (str) {
+		// http://blog.stevenlevithan.com/archives/faster-trim-javascript
 		str = str.replace(/^\s+/, '');
 		for (var i = str.length - 1; i >= 0; i--) {
 			if (/\S/.test(str.charAt(i))) {
@@ -48,6 +49,75 @@ function cpp_js(settings) {
 			}
 		}
 		return str;
+	};
+	
+	var strip_cpp_comments = function(str) {
+		// very loosely based on http://james.padolsey.com/javascript/removing-comments-in-javascript/,
+		// but removed JS-specific stuff and added handling of line continuations. Also, newlines
+		// are generally preserved to keep line numbers intact.
+		str = ('__' + str.replace(/\r\n/g,'\n') + '__').split('');
+		var block_comment = false, line_comment = false, quote = false, lines_lost = 0;
+		for (var i = 0, l = str.length; i < l; i++) {
+	
+			if (quote) {
+				if ((str[i] === "'" || str[i] === '"') && str[i-1] !== '\\') {
+					quote = false;
+				}
+				continue;
+			}
+	 
+			if (block_comment) {
+				if (str[i] === '*' && str[i+1] === '/') {
+					str[i+1] = '';
+					block_comment = false;
+				}
+				str[i] = '';
+				
+				if (str[i] === '\n') {
+					++lines_lost;
+				}
+				continue;
+			}
+	 
+			if (line_comment) {
+				if (str[i+1] === '\n') {
+					line_comment = false;
+				}
+				str[i] = '';
+				continue;
+			}
+			
+			if (str[i] === '\n') {
+				if (str[i-1] == '\\') {
+					// line continuation, replace by whitespace
+					str[i-1] = '';
+					str[i] = '';
+					++lines_lost;
+				}
+				else {
+					while(lines_lost > 0) {
+						str[i] += '\n';
+						--lines_lost;
+					}
+				}
+			}
+	 
+			quote = str[i] === "'" || str[i] === '"';
+			if (str[i] === '/') {
+	 
+				if (str[i+1] === '*') {
+					str[i] = '';
+					block_comment = true;
+					continue;
+				}
+				if (str[i+1] === '/') {
+					str[i] = '';
+					line_comment = true;
+					continue;
+				}	 
+			}
+		}
+		return str.join('').slice(2, -2);
 	};
 
 	// dictionary of default settings, including default error handlers
@@ -62,6 +132,8 @@ function cpp_js(settings) {
 			console.log(s);
 			throw s;
 		},
+		
+		comment_stripper : strip_cpp_comments,
 		
 		include_func : null,
 		completion_func : null
@@ -272,6 +344,7 @@ function cpp_js(settings) {
 		run : function(text, name) {
 			name = name || '<unnamed>';
 			
+			text = settings.comment_stripper(text);
 			var blocks = text.split(block_re);
 			
 			var out = new Array(Math.floor(blocks.length/3) + 2), outi = 0;
@@ -279,17 +352,17 @@ function cpp_js(settings) {
 				out[i] = '';
 			}
 			
-			var ifs_nested = 0, ifs_failed = 0, if_done = false, line = 1;
+			var ifs_nested = 0, ifs_failed = 0, if_done = false, line = 1, command;
 			var if_stack = [];
 			
 			// wrapped error function, augments line number and file
 			var error = function(text) {
-				settings.error_func("(cpp) error("+name+":"+line+"): " + text);
+				settings.error_func("(cpp) error # "+name+":"+line+": " + text);
 			};
 			
 			// wrapped warning function, augments line number and file
 			var warn = function(text) {
-				settings.warn_func("(cpp) warning("+name+":"+line+"): " + text);
+				settings.warn_func("(cpp) warning # "+name+":"+line+": " + text);
 			};
 			
 			var skip = false;

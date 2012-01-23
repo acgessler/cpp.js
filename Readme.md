@@ -30,21 +30,29 @@ to this page is also fine).
 // are the default values and can be omitted.
 var settings = { 
 
-   // character / string that starts a preprocessor command, 
+   // signal string that starts a preprocessor command, 
    // only honoured at the beginning of a line.
    signal_char : '#',
 
    // function used to print warnings, the default 
-   // implementation invokes console.log.
+   // implementation logs to the console.
    warn_func : null,
 
    // function used to print critical errors, the default 
-   // implementation invokes console.log and throws.
+   // implementation logs to the console and throws.
    error_func : null,
    
    // function to be invoked to fetch include files.
    // See the section "Handling include files" below.
    include_func : null,
+   
+   // function used to strip comments from the input file.
+   // The default implementation handles C and C++-style
+   // comments and also removes line continuations.
+   // Since tise function is invoked on all files before
+   // any preprocessing happens, it can be thought of a 
+   // generic preprocessor to the preprocessor.
+   comment_stripper : null
 }
 
 // Create an instance of the library. `settings` is optional.
