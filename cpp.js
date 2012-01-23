@@ -124,6 +124,10 @@ function cpp_js(settings) {
 	// Grav <included_file> or "included_file"
 	var include_re = /(?:<(.*)>|"(.*)")(.*)/;
 	
+	// Magic token to signify the '##' token (to keep it from being
+	// treated as the operator of the same signature).
+	var pseudo_token_doublesharp = '__doublesharp_magic__';
+	
 	// List of preprocessing tokens.
 	var pp_special_token_list = {
 		'==':1,
@@ -195,28 +199,6 @@ function cpp_js(settings) {
 				this.define(k,dict[k]);
 			}
 		},
-		
-		subs : function(text, blacklist, error, warn) {
-			error = error || settings.error_func;
-			warn = warn || settings.warn_func;
-			blacklist = blacklist || {};
-		
-			var new_text = text;
-			for (var k in state) {
-				if (k in blacklist) {
-					continue;
-				}
-				
-				if (this._is_macro(k)) {
-					new_text = this._subs_macro(new_text, k, blacklist, error, warn);
-				}
-				else {
-					new_text = this._subs_simple(new_text, k, blacklist, error, warn);
-				}
-			}
-			
-			return new_text;
-		}, 
 	
 		run : function(text, name) {
 			name = name || '<unnamed>';
@@ -290,7 +272,7 @@ function cpp_js(settings) {
 					break;
 					
 				case "include":
-					elem = self.subs(elem);
+					elem = self.subs(elem, {}, error, warn);
 					var parts = elem.match(include_re);
 					if (parts[3]) {
 						error("unrecognized characters in include: " + elem);
@@ -458,6 +440,41 @@ function cpp_js(settings) {
 			return this._result(out, state);
 		},
 		
+		subs : function(text, blacklist, error, warn, nest) {
+			error = error || settings.error_func;
+			warn = warn || settings.warn_func;
+			
+			blacklist = blacklist || {};
+			nest = nest || 0;
+		
+			var new_text = text;
+			for (var k in state) {
+				if (k in blacklist) {
+					continue;
+				}
+				
+				if (this._is_macro(k)) {
+					new_text = this._subs_macro(new_text, k, blacklist, 
+						error, warn, nest
+					);
+				}
+				else {
+					new_text = this._subs_simple(new_text, k, blacklist, 
+						error, warn, nest
+					);
+				}
+			}
+			
+			// if macro substitution is complete, re-introduce any
+			// '##' tokens previously substituted to keep them from 
+			// being treated as operators.
+			if (!nest) {
+				new_text = new_text.replace(pseudo_token_doublesharp,'##');
+			}
+			
+			return new_text;
+		}, 
+		
 		_result : function(arr, state) {
 			// drop empty lines at the end
 			for (var i = arr.length-1; i >= 0; --i) {
@@ -527,9 +544,9 @@ function cpp_js(settings) {
 		},
 		
 		_handle_ops : function(s, error, warn) {
-			
 			// 6.10.3.2 "The order of evaluation of # and ## operators 
-			// is unspecified."
+			// is unspecified.". We pick '##' first, I think gnu cpp 
+			// does the same.
 			var op, last = 0, pieces = []; 
 			while((op = s.indexOf('##',last)) != -1) {
 				var left, right;
@@ -586,12 +603,10 @@ function cpp_js(settings) {
 			if (last < s.length) {
 				pieces.push(s.slice(last));
 			}
-			console.log(pieces);
 			s = pieces.join('');
 			
 			// handle stringization operator
-			//return s.replace(/#\s*(\w*)/g,'"$1"');
-			return s;
+			return s.replace(/#\s*(\w*)/g,'"$1"');
 		},
 		
 		_update_blacklist : function(blacklist_in, macro_name) {
@@ -606,7 +621,7 @@ function cpp_js(settings) {
 			return blacklist;
 		},
 		
-		_subs_simple : function(text, macro_name, blacklist_in, error, warn) {
+		_subs_simple : function(text, macro_name, blacklist_in, error, warn, nest) {
 			// no macro but just a parameterless substitution
 			var rex = new RegExp("\\b"+macro_name+"\\b",'g');
 			var m_found;
@@ -622,9 +637,8 @@ function cpp_js(settings) {
 				// handle # and ## operator
 				var repl = this._handle_ops(state[macro_name], error, warn);
 				
-				
-				// XXX prevent substitution of this macro
-				repl = this.subs( repl, blacklist, error, warn);
+				// re-scan the replacement tokens (6.10.3.4)
+				repl = this.subs( repl, blacklist, error, warn, nest + 1);
 				
 				out_pieces.push(text.slice(0, m_found.index));
 				out_pieces.push(repl);
@@ -639,7 +653,7 @@ function cpp_js(settings) {
 			return out_pieces.join('');
 		},
 		
-		_subs_macro : function(text, macro_name, blacklist_in, error, warn) {
+		_subs_macro : function(text, macro_name, blacklist_in, error, warn, nest) {
 			var info = this._get_macro_info(macro_name);
 			
 			// See _subs_simple()
@@ -700,7 +714,7 @@ function cpp_js(settings) {
 				var repl = state[macro_name];
 				
 				for (var  i = 0; i < info.params.length; ++i) {
-					var param_subs = this.subs( params_found[i], blacklist, error, warn);
+					var param_subs = this.subs( params_found[i], blacklist, error, warn, nest + 1);
 					
 					var rex = new RegExp("\\b"+info.params[i]+"\\b");
 					var ignore = false, pieces = [], m;
@@ -739,7 +753,7 @@ function cpp_js(settings) {
 				repl = this._handle_ops(repl, error, warn);
 				
 				// and re-scan the replacement list (6.10.3.4)
-				repl = this.subs( repl, blacklist, error, warn);
+				repl = this.subs( repl, blacklist, error, warn, nest + 1);
 				
 				out_pieces.push(text.slice(0, m_found.index));
 				out_pieces.push(repl);
