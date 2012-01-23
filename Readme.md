@@ -7,8 +7,8 @@ cpp.js is a tiny implementation of the C preprocessor (cpp) in Javascript (js).
 
 It supports all features of the original, including `#include`'s and the
 stringization (`#`) and token concatenation (`##`) operators. Macro substitution
-is performed as mandated by the C99 specification. See the *Conformance* section
-for more information.
+is performed (almost) in accordance with the C99 specification. See the 
+*Conformance* section for more information.
 
 My pet project medea.js uses this code to preprocess GLSL shaders, other use
 cases might even exist. 
@@ -132,6 +132,13 @@ settings.completion_func = function(preprocessed_text) {
 cpp.js was written with the C99 language standard in mind and conforms in most
 aspects. However, its expression evaluation engine is based on `eval`, whose
 arithmetics are not strictly C-compliant (i.e. underflow/overflow).
+
+Error messages are mostly taken directly from `gnu cpp`.
+
+Not supported are:
+  - variadic argument lists
+  - predefined macro names from C (i.e. `__FILE__`)
+  - `#line`
 
 
 
