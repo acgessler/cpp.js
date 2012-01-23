@@ -169,14 +169,23 @@ function cpp_js(settings) {
 	
 	return {
 	
+		// /////////////////////////////////////////////////////////////////////////////
+		// (public) Clear the current status code. i.e. reset all defines.
 		clear : function() {
 			state = {};
 		},
 		
+		// /////////////////////////////////////////////////////////////////////////////
+		// (public) Check if macro `k` is defined.
 		defined : function(k) {
 			return k in state;
 		},
 	
+		// /////////////////////////////////////////////////////////////////////////////
+		// (public) Define macro `k` with replacement value `v`. To define macros with
+		// parameters, include the parameter list in the macro name, i.e. 
+		// k <= "foo(a,b)", v <= "a ## b". The function invokes the error
+		// callback if the macro contains syntax errors.
 		define : function(k,v) {
 			var macro = this._get_macro_info(k);
 			if (!this._is_identifier(k) && !macro) {
@@ -200,16 +209,25 @@ function cpp_js(settings) {
 			state[k] = v || '';
 		},
 		
-		undefine : function(k,v) {
+		// /////////////////////////////////////////////////////////////////////////////
+		// (public) Undefine `k`. A no-op if `k` is not defined.
+		undefine : function(k) {
 			delete state[k];
 		},
 		
+		// /////////////////////////////////////////////////////////////////////////////
+		// (public) Given a dictionary of macro_name, replacement pairs, invoke
+		// `define` on all of them.
 		define_multiple : function(dict) {
 			for(var k in dict) {
 				this.define(k,dict[k]);
 			}
 		},
 	
+		// /////////////////////////////////////////////////////////////////////////////
+		// (public) Preprocess `text` and return the preprocessed text (or receive
+		// a completion callback if asynchronous processing is enabled). `name` is 
+		// an optional string that is used in error messages as file name.
 		run : function(text, name) {
 			name = name || '<unnamed>';
 			
@@ -450,6 +468,13 @@ function cpp_js(settings) {
 			return this._result(out, state);
 		},
 		
+		// /////////////////////////////////////////////////////////////////////////////
+		// (public) Given a `text`, substitute macros until no further substitutions
+		// are possible. `blacklist` is an optional set of macro names to be ignored,
+		// these are not substituted and remain as is.
+		// `error` and `warn` are optional callbacks, by default the corresponding
+		// callbacks from settings are used. Users should never assign a value to
+		// `nest_sub`, which is used to keep track of recursive invocations internally.
 		subs : function(text, blacklist, error, warn, nest_sub) {
 			error = error || settings.error_func;
 			warn = warn || settings.warn_func;
@@ -488,6 +513,10 @@ function cpp_js(settings) {
 			return new_text;
 		}, 
 		
+		// /////////////////////////////////////////////////////////////////////////////
+		// Given an array of single lines, produce the result text by merging lines
+		// and trimming the result. The function also invokes the user-defined
+		// completion callback, but it also returns the preprocessed text to the caller.
 		_result : function(arr, state) {
 			// drop empty lines at the end
 			for (var i = arr.length-1; i >= 0; --i) {
@@ -507,20 +536,32 @@ function cpp_js(settings) {
 			return text;
 		},
 		
+		// /////////////////////////////////////////////////////////////////////////////
+		// Check if `identifier` is a well-formed identifier according to C rules.
 		_is_identifier : function(identifier) {
 			// Note: important to use match() because test() would update
 			// the 'lastIndex' property on the regex.
 			return !!identifier.match(is_identifier_only_re);
 		},
 		
+		// /////////////////////////////////////////////////////////////////////////////
+		// Check if `macro` is a well-formed macro name.
 		_is_macro : function(macro) {
 			return this._get_macro_info(macro) != null;
 		},
 		
+		// /////////////////////////////////////////////////////////////////////////////
+		// Check if `tok` is a special preprocessor token (such as ==, <=, >=).
+		// These tokens are handled differently when participating on either side
+		// of the ## operator.
 		_is_pp_special_token : function(tok) {
 			return trim(tok) in pp_special_token_list;
 		},
 		
+		// /////////////////////////////////////////////////////////////////////////////
+		// Get the description dictionary for a macro named `k` or null if the macro
+		// is malformed (i.e. syntax wrong). Does not add new macros to the macro
+		// cache but uses the cache to speed-up looking up known macros.
 		_get_macro_info : function(k) {
 			if (macro_cache[k]) {
 				return macro_cache[k];
@@ -556,17 +597,20 @@ function cpp_js(settings) {
 			};
 		},
 		
-		_handle_ops : function(s, error, warn) {
+		// /////////////////////////////////////////////////////////////////////////////
+		// Evaluate the '#' and '##' preprocessor operators in the given (partially
+		// substituted) sequence of preprocessor tokens.
+		_handle_ops : function(text, error, warn) {
 			// 6.10.3.2 "The order of evaluation of # and ## operators 
 			// is unspecified.". We pick '##' first, I think gnu cpp 
 			// does the same.
 			var op, pieces = []; 
-			while((op = s.indexOf('##')) != -1) {
+			while((op = text.indexOf('##')) != -1) {
 
 				var left = null, right = null;
 				for (var i = op-1; i >= 0; --i) {
-					if (!s[i].match(/\s/)) {
-						left = s[i] + (left || '');
+					if (!text[i].match(/\text/)) {
+						left = text[i] + (left || '');
 					}
 					else if (left !== null) {
 						break;
@@ -574,9 +618,9 @@ function cpp_js(settings) {
 				}
 				++i;
 				
-				for (var j = op+2; j < s.length; ++j) {
-					if (!s[j].match(/\s/)) {
-						right = (right || '') + s[j];
+				for (var j = op+2; j < text.length; ++j) {
+					if (!text[j].match(/\text/)) {
+						right = (right || '') + text[j];
 					}
 					else if (right !== null) {
 						break;
@@ -608,24 +652,27 @@ function cpp_js(settings) {
 					concat = pseudo_token_doublesharp;
 				}
 				
-				pieces.push(s.slice(0,i));
+				pieces.push(text.slice(0,i));
 				
 				// has this token already been consumed by a concatenation
 				// operation? If so,
 				pieces.push(concat);
 				
-				if (j < s.length) {
-					pieces.push(s.slice(j));
+				if (j < text.length) {
+					pieces.push(text.slice(j));
 				}
 				
-				s = pieces.join('');
+				text = pieces.join('');
 				pieces.length = 0;
 			}
 			
 			// handle stringization operator
-			return s.replace(/#\s*(\S*)/g,'"$1"');
+			return text.replace(/#\text*(\text*)/g,'"$1"');
 		},
 		
+		// /////////////////////////////////////////////////////////////////////////////
+		// Update the given `blacklist_in` dictionary of ignored macros with 
+		// `macro_name` and return the new blacklist.
 		_update_blacklist : function(blacklist_in, macro_name) {
 			var blacklist = {};
 			blacklist[macro_name] = 1;
@@ -638,7 +685,11 @@ function cpp_js(settings) {
 			return blacklist;
 		},
 		
-		_subs_simple : function(text, macro_name, blacklist_in, error, warn, nest_sub) {
+		// /////////////////////////////////////////////////////////////////////////////
+		// Substitute ALL occurences of `macro_name` in `text` or only the first
+		// if `once` is set to true. `macro_name` must be a simple macro with no
+		// parameter list. Return the result of the substitution.
+		_subs_simple : function(text, macro_name, blacklist_in, error, warn, nest_sub, once) {
 			// no macro but just a parameterless substitution
 			var rex = new RegExp("\\b"+macro_name+"\\b",'g');
 			var m_found;
@@ -662,6 +713,11 @@ function cpp_js(settings) {
 				
 				text = text.slice(m_found.index + m_found[0].length);
 				rex.lastIndex = 0;
+				
+				if(once) {
+					out_pieces.push(text);
+					break;
+				}
 			}
 			if (!out_pieces.length) {
 				return text;
@@ -670,7 +726,11 @@ function cpp_js(settings) {
 			return out_pieces.join('');
 		},
 		
-		_subs_macro : function(text, macro_name, blacklist_in, error, warn, nest_sub) {
+		// /////////////////////////////////////////////////////////////////////////////
+		// Substitute ALL occurences of `macro_name` in `text` or only the first
+		// if `once` is set to true. `macro_name` must be a macro with parameters.
+		// Return the result of the substitution.
+		_subs_macro : function(text, macro_name, blacklist_in, error, warn, nest_sub, once) {
 			var info = this._get_macro_info(macro_name);
 			
 			// See _subs_simple()
@@ -783,7 +843,13 @@ function cpp_js(settings) {
 				out_pieces.push(text.slice(0, m_found.index));
 				out_pieces.push(repl);
 				text = text.slice( last );
+				
 				info.pat.lastIndex = 0;
+				
+				if(once) {
+					out_pieces.push(text);
+					break;
+				}
 			}
 			if (!out_pieces.length) {
 				return text;
@@ -792,6 +858,7 @@ function cpp_js(settings) {
 			return out_pieces.join('');
 		},
 		
+		// /////////////////////////////////////////////////////////////////////////////
 		_eval : function(val, error, warn) {
 			var old_val = val;
 		
