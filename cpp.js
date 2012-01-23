@@ -809,7 +809,7 @@ function cpp_js(settings) {
 			}
 			
 			console.log('match for ' + macro_name);
-			var params_found = [], last, nest = -1;
+			var params_found = [], last, nest = -1, in_string = false;
 			
 			// here macro invocations may be nested, so a regex is not
 			// sufficient to "parse" this.
@@ -823,6 +823,15 @@ function cpp_js(settings) {
 					if (++nest === 0) {
 						last = i+1;
 					}
+				}
+				else if ( (text[i] == '"' || text[i] == "'") && (!i || text[i-1] != '\\')) {
+					if (in_string) {
+						--nest;
+					}
+					else {
+						++nest;
+					}
+					in_string = !in_string;
 				}
 				else if ( text[i] == ')' ) {
 					if(--nest === -1) {
