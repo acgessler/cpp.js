@@ -524,18 +524,28 @@ function cpp_js(settings) {
 			nest_sub = nest_sub || 0;
 		
 			var new_text = text;
-			var rex = /\b./g, m_boundary;
+			var rex = /\b.|["']/g, m_boundary;
 			
 			// XXX This scales terribly. Possible optimization:
 			//   use KMP for substring searches
-			var pieces = [], last = 0;
+			var pieces = [], last = 0, in_string = false;
 			while (m_boundary = rex.exec(new_text)) {
+			
+				var idx = m_boundary.index;
+				if ((m_boundary[0] == '"' || m_boundary[0] == "'") && (!idx || new_text[idx-1] != '\\' 
+					|| (idx > 1 && new_text[idx-2] == '\\'))) {
+					in_string = !in_string;
+				}
 				
-				for (var i = Math.min(new_text.length - m_boundary.index,max_macro_length); i >= 1; --i) {
+				if (in_string) {
+					continue;
+				}
+				
+				for (var i = Math.min(new_text.length - idx,max_macro_length); i >= 1; --i) {
 					if(!macro_counts_by_length[i]) {
 						continue;
 					}
-					var k = new_text.slice(m_boundary.index,m_boundary.index+i);
+					var k = new_text.slice(idx,idx+i);
 					console.log(k);
 					if (k in state) {
 						if (k in blacklist) {
@@ -546,25 +556,25 @@ function cpp_js(settings) {
 						var sub;
 						if (this._is_macro(k)) {
 							sub = this._subs_macro(new_text, k, blacklist, 
-								error, warn, nest_sub, m_boundary.index
+								error, warn, nest_sub, idx
 							);
 						}
 						else {
 							sub = this._subs_simple(new_text, k, blacklist, 
-								error, warn, nest_sub, m_boundary.index
+								error, warn, nest_sub, idx
 							);
 						}
 						if (sub === null) {
 							continue;
 						}
 						
-						pieces.push(new_text.slice(last, m_boundary.index));
+						pieces.push(new_text.slice(last, idx));
 						pieces.push(sub[0]);
 						
 						console.log('subs ' + new_text.slice(m_boundary.index,m_boundary.index+sub[1]) + ' by ' + sub[0]);
 						console.log(new_text.slice(m_boundary.index,m_boundary.index+sub[1]));
 						
-						rex.lastIndex = last = m_boundary.index+sub[1];
+						rex.lastIndex = last = idx+sub[1];
 						break;
 					}
 				}
