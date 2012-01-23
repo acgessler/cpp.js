@@ -49,7 +49,7 @@ var settings = {
    // function used to strip comments from the input file.
    // The default implementation handles C and C++-style
    // comments and also removes line continuations.
-   // Since tise function is invoked on all files before
+   // Since this function is invoked on all files before
    // any preprocessing happens, it can be thought of a 
    // generic preprocessor to the preprocessor.
    comment_stripper : null

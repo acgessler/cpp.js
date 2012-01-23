@@ -208,7 +208,9 @@ function cpp_js(settings) {
 	
 	var pseudo_token_empty = '__empty_magic__';
 	var is_pseudo_token_empty = new RegExp(pseudo_token_empty,'g');
-
+	
+	var pseudo_token_nosubs = '__nosubs__';
+	var is_pseudo_token_nosubs = new RegExp(pseudo_token_nosubs,'g');
 	
 	// List of preprocessing tokens.
 	var pp_special_token_list = {
@@ -589,11 +591,21 @@ function cpp_js(settings) {
 		// `error` and `warn` are optional callbacks, by default the corresponding
 		// callbacks from settings are used. Users should never assign a value to
 		// `nest_sub`, which is used to keep track of recursive invocations internally.
-		subs : function(text, blacklist, error, warn, nest_sub) {
+		subs : function(text, blacklist_in, error, warn, nest_sub) {
 			error = error || settings.error_func;
 			warn = warn || settings.warn_func;
 			
-			blacklist = blacklist || {};
+			var TOTALLY_BLACK = 1e10;
+			
+			// create a copy of the blacklist and make sure that all incoming
+			// macros are totally blacked out. 
+			var blacklist = {};
+			if (blacklist_in) {
+				for (var k in blacklist_in) {
+					blacklist[k] = TOTALLY_BLACK;
+				}
+			}
+			
 			nest_sub = nest_sub || 0;
 		
 			var new_text = text;
@@ -602,6 +614,7 @@ function cpp_js(settings) {
 			// XXX This scales terribly. Possible optimization:
 			//   use KMP for substring searches
 			var pieces = [], last = 0, in_string = false;
+			
 			while (m_boundary = rex.exec(new_text)) {
 			
 				var idx = m_boundary.index;
@@ -619,41 +632,80 @@ function cpp_js(settings) {
 						continue;
 					}
 					var k = new_text.slice(idx,idx+i);
-					console.log(k);
 					if (k in state) {
-						if (k in blacklist) {
-							continue;
+					
+						// if this would be a match, but the macro is blacklisted,
+						// we need to skip it alltogether or parts of it might be
+						// interpreted as macros on their own.
+						if (blacklist[k] >= idx) {
+			
+							pieces.push(new_text.slice(0,idx));
+							pieces.push(pseudo_token_nosubs+k);
+							console.log('safe: ' + k);
+							new_text = new_text.slice(idx+k.length);
+							rex.lastIndex = 0;
+						
+							// adjust blacklist indices
+							for(var kk in blacklist) {
+								if (blacklist[kk] != TOTALLY_BLACK) {
+									blacklist[kk] -= idx+k.length;
+								}
+							};
+							console.log(blacklist);
+							break;
 						}
-						console.log('trysub: ' + k);
+						else {
+							delete blacklist[k];
+						}
+						console.log('trysub: ' + k + '>' + idx);
 						
 						var sub;
 						if (this._is_macro(k)) {
-							sub = this._subs_macro(new_text, k, blacklist, 
+							sub = this._subs_macro(new_text, k, {}, 
 								error, warn, nest_sub, idx
 							);
 						}
 						else {
-							sub = this._subs_simple(new_text, k, blacklist, 
+							sub = this._subs_simple(new_text, k, {}, 
 								error, warn, nest_sub, idx
 							);
 						}
 						if (sub === null) {
+						console.log('subfail');
 							continue;
 						}
 						
-						pieces.push(new_text.slice(last, idx));
-						pieces.push(sub[0]);
+						// handle # and ## operator
+						sub[0] = this._handle_ops(sub[0], error, warn);
 						
 						console.log('subs ' + new_text.slice(m_boundary.index,m_boundary.index+sub[1]) + ' by ' + sub[0]);
 						console.log(new_text.slice(m_boundary.index,m_boundary.index+sub[1]));
 						
-						rex.lastIndex = last = idx+sub[1];
+						// XXX a bit too expensive ... but not too easy to avoid.
+						pieces.push(new_text.slice(0,idx));
+						new_text = sub[0] + new_text.slice(idx+sub[1]);
+						rex.lastIndex = 0;
+						
+						// adjust blacklist indices
+						for(var kk in blacklist) {
+							if (blacklist[kk] != TOTALLY_BLACK) {
+								blacklist[kk] -= idx;
+							}
+						}
+						
+						// rescan this string, but keep the macro that we just replaced
+						// blacklisted until we're beyond the replacement. This 
+						// prevents infinite recursion.
+			
+						console.log('G BLACKlist: ' + blacklist['g']);
+						
+						blacklist[k] = sub[0].length;
 						break;
 					}
 				}
 			}
 			
-			pieces.push(new_text.slice(last));
+			pieces.push(new_text);
 			new_text = pieces.join('');
 			
 			// if macro substitution is complete, re-introduce any
@@ -664,6 +716,7 @@ function cpp_js(settings) {
 				new_text = new_text.replace(is_pseudo_token_doublesharp,'##');
 				new_text = new_text.replace(is_pseudo_token_space,' ');
 				new_text = new_text.replace(is_pseudo_token_empty,'');
+				new_text = new_text.replace(is_pseudo_token_nosubs,'');
 			}
 			
 			return new_text;
@@ -809,6 +862,12 @@ function cpp_js(settings) {
 				if (concat == '##') {
 					concat = pseudo_token_doublesharp;
 				}
+				else {
+					// tokens that we marked as no longer available for
+					// substitution become available again when they're
+					// concatenated with other tokens.
+					concat = concat.replace(is_pseudo_token_nosubs,'');
+				}
 				
 				pieces.push(text.slice(0,i));
 				
@@ -830,21 +889,6 @@ function cpp_js(settings) {
 		},
 		
 		// ----------------------
-		// Update the given `blacklist_in` dictionary of ignored macros with 
-		// `macro_name` and return the new blacklist.
-		_update_blacklist : function(blacklist_in, macro_name) {
-			var blacklist = {};
-			blacklist[macro_name] = 1;
-			
-			if (blacklist_in) {
-				for(var k in blacklist_in) {
-					blacklist[k]=1;
-				}
-			}
-			return blacklist;
-		},
-		
-		// ----------------------
 		// Substitute an occurences of `macro_name` in `text` that begins at offset
 		// `start_idx`. `macro_name` must be a simple macro with no parameter list. 
 		// Return a 2-tuple with the substitution string and the substituted length 
@@ -853,24 +897,13 @@ function cpp_js(settings) {
 			// no macro but just a parameterless substitution
 			var rex = new RegExp(macro_name+"(\\b|"+pseudo_token_space+"|"+pseudo_token_empty+")",'g');
 			
-			// build updated blacklist to exclude this macro from recursive 
-			// substitutions (which would potentially lead to infinite
-			// recursion and are thus forbidden by the standard, 6.10.3.4)
-			var blacklist = this._update_blacklist(blacklist_in, macro_name);
-			
 			rex.lastIndex = start_idx || 0;
 			var m_found = rex.exec(text);
 			if (!m_found || m_found.index != start_idx) {
 				return null;
 			}
 			
-			// handle # and ## operator
-			var repl = this._handle_ops(state[macro_name], error, warn);
-				
-			// re-scan the replacement tokens (6.10.3.4)
-			repl = this.subs( repl, blacklist, error, warn, nest_sub + 1);
-				
-			return [repl,m_found[0].length];
+			return [state[macro_name],m_found[0].length];
 		},
 		
 		// ----------------------
@@ -878,11 +911,8 @@ function cpp_js(settings) {
 		// `start_idx`. `macro_name` must be a simple macro with parameters. 
 		// Return a 2-tuple with the substitution string and the substituted length 
 		// in the original string.
-		_subs_macro : function(text, macro_name, blacklist_in, error, warn, nest_sub, start_idx) {
+		_subs_macro : function(text, macro_name, blacklist, error, warn, nest_sub, start_idx) {
 			var info = this._get_macro_info(macro_name);
-			
-			// See _subs_simple()
-			var blacklist = this._update_blacklist(blacklist_in, macro_name);
 			var old_text = text;
 			
 			info.pat.lastIndex = start_idx || 0;
@@ -997,12 +1027,6 @@ function cpp_js(settings) {
 				pieces.push(repl);
 				repl = pieces.join('');
 			}
-			
-			// handle # and ## operator
-			repl = this._handle_ops(repl, error, warn);
-			
-			// and re-scan the replacement list (6.10.3.4)
-			repl = this.subs( repl, blacklist, error, warn, nest_sub + 1);
 			return [repl,last - start_idx];
 		},
 		
