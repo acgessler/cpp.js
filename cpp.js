@@ -560,14 +560,15 @@ function cpp_js(settings) {
 			// 6.10.3.2 "The order of evaluation of # and ## operators 
 			// is unspecified.". We pick '##' first, I think gnu cpp 
 			// does the same.
-			var op, last = 0, pieces = []; 
-			while((op = s.indexOf('##',last)) != -1) {
-				var left, right;
+			var op, pieces = []; 
+			while((op = s.indexOf('##')) != -1) {
+
+				var left = null, right = null;
 				for (var i = op-1; i >= 0; --i) {
 					if (!s[i].match(/\s/)) {
 						left = s[i] + (left || '');
 					}
-					else if (left !== undefined) {
+					else if (left !== null) {
 						break;
 					}
 				}
@@ -577,7 +578,7 @@ function cpp_js(settings) {
 					if (!s[j].match(/\s/)) {
 						right = (right || '') + s[j];
 					}
-					else if (right !== undefined) {
+					else if (right !== null) {
 						break;
 					}
 				}
@@ -607,16 +608,19 @@ function cpp_js(settings) {
 					concat = pseudo_token_doublesharp;
 				}
 				
-				pieces.push(s.slice(last,i));
+				pieces.push(s.slice(0,i));
+				
+				// has this token already been consumed by a concatenation
+				// operation? If so,
 				pieces.push(concat);
 				
-				last = j;
+				if (j < s.length) {
+					pieces.push(s.slice(j));
+				}
+				
+				s = pieces.join('');
+				pieces.length = 0;
 			}
-			
-			if (last < s.length) {
-				pieces.push(s.slice(last));
-			}
-			s = pieces.join('');
 			
 			// handle stringization operator
 			return s.replace(/#\s*(\w*)/g,'"$1"');
@@ -678,7 +682,6 @@ function cpp_js(settings) {
 			var out_pieces = [];
 			while (m_found = info.pat.exec(text)) {
 				var params_found = [], last, nest = -1;
-				var full;
 				
 				// here macro invocations may be nested, so a regex is not
 				// sufficient to "parse" this.
