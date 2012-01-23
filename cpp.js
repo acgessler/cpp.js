@@ -167,21 +167,27 @@ function cpp_js(settings) {
 	var state = {};
 	var macro_cache = {};
 	
+	var max_macro_length = 0;
+	var macro_counts_by_length = {};
+	
 	return {
 	
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// (public) Clear the current status code. i.e. reset all defines.
 		clear : function() {
 			state = {};
+			macro_counts_by_length = {};
+			macro_cache = {};
+			max_macro_length = 0;
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// (public) Check if macro `k` is defined.
 		defined : function(k) {
 			return k in state;
 		},
 	
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// (public) Define macro `k` with replacement value `v`. To define macros with
 		// parameters, include the parameter list in the macro name, i.e. 
 		// k <= "foo(a,b)", v <= "a ## b". The function invokes the error
@@ -198,24 +204,59 @@ function cpp_js(settings) {
 	
 			if (macro) {
 				k = macro.name;
+				this.undefine(k);
 				
 				// This inserts the macro into the macro cache, which
 				// holds pre-parsed data to simplify substitution.
 				macro_cache[k] = macro;
 			}
-			else if (k in macro_cache) {
-				delete macro_cache[k];
+			else {
+				this.undefine(k);
 			}
+			
 			state[k] = v || '';
+			
+			// macro length table housekeeping
+			macro_counts_by_length[k.length] = (macro_counts_by_length[k.length] || 0 ) + 1;
+			if (k.length > max_macro_length) {
+				max_macro_length = k.length;
+			}
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// (public) Undefine `k`. A no-op if `k` is not defined.
 		undefine : function(k) {
-			delete state[k];
+			if(k in state) {
+				delete state[k];
+				
+				// update macro length table
+				var nl = macro_counts_by_length[k.length] - 1;
+				if (k.length === max_macro_length && !nl) {
+					max_macro_length = 0;
+					for (var i = k.length-1; i >= 0; --i) {
+						if (macro_counts_by_length[i]) {
+							max_macro_length = i;
+							break;
+						}
+					}
+				}
+				
+				macro_counts_by_length[k.length] = nl;
+				delete macro_cache[k];
+			}
+			else {
+			
+				// this happens if the user includes the parameter list
+				// in the name. This is not part of the specification,
+				// but implemented for reasons of API symmetry.
+				var macro = this._get_macro_info(k);
+				if (macro) {
+					this.undefine(macro.name);
+				}
+			}
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// (public) Given a dictionary of macro_name, replacement pairs, invoke
 		// `define` on all of them.
 		define_multiple : function(dict) {
@@ -224,7 +265,7 @@ function cpp_js(settings) {
 			}
 		},
 	
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// (public) Preprocess `text` and return the preprocessed text (or receive
 		// a completion callback if asynchronous processing is enabled). `name` is 
 		// an optional string that is used in error messages as file name.
@@ -468,7 +509,7 @@ function cpp_js(settings) {
 			return this._result(out, state);
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// (public) Given a `text`, substitute macros until no further substitutions
 		// are possible. `blacklist` is an optional set of macro names to be ignored,
 		// these are not substituted and remain as is.
@@ -483,22 +524,54 @@ function cpp_js(settings) {
 			nest_sub = nest_sub || 0;
 		
 			var new_text = text;
-			for (var k in state) {
-				if (k in blacklist) {
-					continue;
-				}
+			var rex = /\b./g, m_boundary;
+			
+			// XXX This scales terribly. Possible optimization:
+			//   use KMP for substring searches
+			var pieces = [], last = 0;
+			while (m_boundary = rex.exec(new_text)) {
 				
-				if (this._is_macro(k)) {
-					new_text = this._subs_macro(new_text, k, blacklist, 
-						error, warn, nest_sub
-					);
-				}
-				else {
-					new_text = this._subs_simple(new_text, k, blacklist, 
-						error, warn, nest_sub
-					);
+				for (var i = Math.min(new_text.length - m_boundary.index,max_macro_length); i >= 1; --i) {
+					if(!macro_counts_by_length[i]) {
+						continue;
+					}
+					var k = new_text.slice(m_boundary.index,m_boundary.index+i);
+					console.log(k);
+					if (k in state) {
+						if (k in blacklist) {
+							continue;
+						}
+						console.log('trysub: ' + k);
+						
+						var sub;
+						if (this._is_macro(k)) {
+							sub = this._subs_macro(new_text, k, blacklist, 
+								error, warn, nest_sub, m_boundary.index
+							);
+						}
+						else {
+							sub = this._subs_simple(new_text, k, blacklist, 
+								error, warn, nest_sub, m_boundary.index
+							);
+						}
+						if (sub === null) {
+							continue;
+						}
+						
+						pieces.push(new_text.slice(last, m_boundary.index));
+						pieces.push(sub[0]);
+						
+						console.log('subs ' + new_text.slice(m_boundary.index,m_boundary.index+sub[1]) + ' by ' + sub[0]);
+						console.log(new_text.slice(m_boundary.index,m_boundary.index+sub[1]));
+						
+						rex.lastIndex = last = m_boundary.index+sub[1];
+						break;
+					}
 				}
 			}
+			
+			pieces.push(new_text.slice(last));
+			new_text = pieces.join('');
 			
 			// if macro substitution is complete, re-introduce any
 			// '##' tokens previously substituted to keep them from 
@@ -513,7 +586,7 @@ function cpp_js(settings) {
 			return new_text;
 		}, 
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// Given an array of single lines, produce the result text by merging lines
 		// and trimming the result. The function also invokes the user-defined
 		// completion callback, but it also returns the preprocessed text to the caller.
@@ -536,7 +609,7 @@ function cpp_js(settings) {
 			return text;
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// Check if `identifier` is a well-formed identifier according to C rules.
 		_is_identifier : function(identifier) {
 			// Note: important to use match() because test() would update
@@ -544,13 +617,13 @@ function cpp_js(settings) {
 			return !!identifier.match(is_identifier_only_re);
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// Check if `macro` is a well-formed macro name.
 		_is_macro : function(macro) {
 			return this._get_macro_info(macro) != null;
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// Check if `tok` is a special preprocessor token (such as ==, <=, >=).
 		// These tokens are handled differently when participating on either side
 		// of the ## operator.
@@ -558,7 +631,7 @@ function cpp_js(settings) {
 			return trim(tok) in pp_special_token_list;
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// Get the description dictionary for a macro named `k` or null if the macro
 		// is malformed (i.e. syntax wrong). Does not add new macros to the macro
 		// cache but uses the cache to speed-up looking up known macros.
@@ -587,7 +660,9 @@ function cpp_js(settings) {
 				}
 			}
 			
-			var pat = new RegExp('\\b' + m[1] + '\\s*\\(','g');
+			// ES 1.8's sticky flag would be useful, but sadly it is not
+			// universally supported yet.
+			var pat = new RegExp(m[1] + '\\s*\\(','g');
 			
 			return {
 				params:params,
@@ -597,7 +672,7 @@ function cpp_js(settings) {
 			};
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// Evaluate the '#' and '##' preprocessor operators in the given (partially
 		// substituted) sequence of preprocessor tokens.
 		_handle_ops : function(text, error, warn) {
@@ -667,10 +742,11 @@ function cpp_js(settings) {
 			}
 			
 			// handle stringization operator
-			return text.replace(/#\text*(\text*)/g,'"$1"');
+			text = text.replace(/#\s*(\S*)/g,'"$1"');
+			return text;
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		// Update the given `blacklist_in` dictionary of ignored macros with 
 		// `macro_name` and return the new blacklist.
 		_update_blacklist : function(blacklist_in, macro_name) {
@@ -685,180 +761,160 @@ function cpp_js(settings) {
 			return blacklist;
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
-		// Substitute ALL occurences of `macro_name` in `text` or only the first
-		// if `once` is set to true. `macro_name` must be a simple macro with no
-		// parameter list. Return the result of the substitution.
-		_subs_simple : function(text, macro_name, blacklist_in, error, warn, nest_sub, once) {
+		// ----------------------
+		// Substitute an occurences of `macro_name` in `text` that begins at offset
+		// `start_idx`. `macro_name` must be a simple macro with no parameter list. 
+		// Return a 2-tuple with the substitution string and the substituted length 
+		// in the original string.
+		_subs_simple : function(text, macro_name, blacklist_in, error, warn, nest_sub, start_idx) {
 			// no macro but just a parameterless substitution
-			var rex = new RegExp("\\b"+macro_name+"\\b",'g');
-			var m_found;
+			var rex = new RegExp(macro_name+"(\\b|"+pseudo_token_space+"|"+pseudo_token_empty+")",'g');
 			
 			// build updated blacklist to exclude this macro from recursive 
 			// substitutions (which would potentially lead to infinite
 			// recursion and are thus forbidden by the standard, 6.10.3.4)
 			var blacklist = this._update_blacklist(blacklist_in, macro_name);
 			
-			var out_pieces = [];
-			while (m_found = rex.exec(text)) {
+			rex.lastIndex = start_idx || 0;
+			var m_found = rex.exec(text);
+			if (!m_found || m_found.index != start_idx) {
+				return null;
+			}
 			
-				// handle # and ## operator
-				var repl = this._handle_ops(state[macro_name], error, warn);
+			// handle # and ## operator
+			var repl = this._handle_ops(state[macro_name], error, warn);
 				
-				// re-scan the replacement tokens (6.10.3.4)
-				repl = this.subs( repl, blacklist, error, warn, nest_sub + 1);
+			// re-scan the replacement tokens (6.10.3.4)
+			repl = this.subs( repl, blacklist, error, warn, nest_sub + 1);
 				
-				out_pieces.push(text.slice(0, m_found.index));
-				out_pieces.push(repl);
-				
-				text = text.slice(m_found.index + m_found[0].length);
-				rex.lastIndex = 0;
-				
-				if(once) {
-					out_pieces.push(text);
-					break;
-				}
-			}
-			if (!out_pieces.length) {
-				return text;
-			}
-			out_pieces.push(text.slice(rex.lastIndex));
-			return out_pieces.join('');
+			return [repl,m_found[0].length];
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
-		// Substitute ALL occurences of `macro_name` in `text` or only the first
-		// if `once` is set to true. `macro_name` must be a macro with parameters.
-		// Return the result of the substitution.
-		_subs_macro : function(text, macro_name, blacklist_in, error, warn, nest_sub, once) {
+		// ----------------------
+		// Substitute an occurences of `macro_name` in `text` that begins at offset
+		// `start_idx`. `macro_name` must be a simple macro with parameters. 
+		// Return a 2-tuple with the substitution string and the substituted length 
+		// in the original string.
+		_subs_macro : function(text, macro_name, blacklist_in, error, warn, nest_sub, start_idx) {
 			var info = this._get_macro_info(macro_name);
 			
 			// See _subs_simple()
 			var blacklist = this._update_blacklist(blacklist_in, macro_name);
 			var old_text = text;
 			
-			var m_found;
+			info.pat.lastIndex = start_idx || 0;
+			var m_found = info.pat.exec(text);
+			if (!m_found || m_found.index != start_idx) {
+				return null;
+			}
 			
-			var out_pieces = [];
-			while (m_found = info.pat.exec(text)) {
-				var params_found = [], last, nest = -1;
+			console.log('match for ' + macro_name);
+			var params_found = [], last, nest = -1;
+			
+			// here macro invocations may be nested, so a regex is not
+			// sufficient to "parse" this.
+			for (var i = m_found.index; i < text.length; ++i) {
+				if (text[i] == ',' && !nest) {
+					params_found.push(trim(text.slice(last, i)));
+					last = i+1;
+				}
 				
-				// here macro invocations may be nested, so a regex is not
-				// sufficient to "parse" this.
-				for (var i = m_found.index; i < text.length; ++i) {
-					if (text[i] == ',' && !nest) {
-						params_found.push(trim(text.slice(last, i)));
+				if ( text[i] == '(' ) {
+					if (++nest === 0) {
 						last = i+1;
 					}
-					
-					if ( text[i] == '(' ) {
-						if (++nest === 0) {
-							last = i+1;
-						}
-					}
-					else if ( text[i] == ')' ) {
-						if(--nest === -1) {
-							params_found.push(trim(text.slice(last, i)));
-							last = i+1;
-							break;
-						}
+				}
+				else if ( text[i] == ')' ) {
+					if(--nest === -1) {
+						params_found.push(trim(text.slice(last, i)));
+						last = i+1;
+						break;
 					}
 				}
-				
-				if (nest !== -1) {
-					error('unbalanced parentheses, expected )');
-				}
+			}
 			
-				if (params_found.length != info.params.length) {
-					// special case: if no arguments are expected and none passed either,
-					// we will still get one empty argument from the previous logic.
-					if (info.params.length || params_found.length > 1 || params_found[0]) {
-						error('illegal invocation of macro ' + macro_name + ', expected ' + 
-							info.params.length + ' parameters but got ' + 
-							params_found.length);
-					}
-					else {
-						params_found = [];
-					}
+			if (nest !== -1) {
+				error('unbalanced parentheses, expected )');
+			}
+		
+			if (params_found.length != info.params.length) {
+				// special case: if no arguments are expected and none passed either,
+				// we will still get one empty argument from the previous logic.
+				if (info.params.length || params_found.length > 1 || params_found[0]) {
+					error('illegal invocation of macro ' + macro_name + ', expected ' + 
+						info.params.length + ' parameters but got ' + 
+						params_found.length);
 				}
-				
-				// macro parameters may potentially be empty and they may 
-				// contain spaces, which are generally preserved. So substitute
-				// them by a magic replacement string.
-				for (var i = 0; i < params_found.length; ++i) {
-					if (!params_found[i]) {
-						params_found[i] = pseudo_token_empty;
-						continue;
-					}
-					params_found[i] = params_found[i].replace(/\s/g,pseudo_token_space);
+				else {
+					params_found = [];
 				}
+			}
+			
+			// macro parameters may potentially be empty, but this would lead
+			// to trouble in subsequent substitutions. So substitute a sentinel
+			// string.
+			for (var i = 0; i < params_found.length; ++i) {
+				if (!params_found[i]) {
+					params_found[i] = pseudo_token_empty;
+				}
+			}
+			
+			// insert arguments into replacement list, but evaluate them
+			// PRIOR to doing this (6.10.3.1). We need, however, to 
+			// exclude all arguments directly preceeded or succeeded by
+			// either the stringization or the token concatenation operator
+			var repl = state[macro_name];
+			
+			for (var  i = 0; i < info.params.length; ++i) {
+				// what applies to empty parameter applies to whitespace in the
+				// parameter text as well. Substitute by a magic sentinel.
+				// This must be done PRIOR to evaluating the parameters -
+				// a parameter might evaluate to something like '2, 4'
+				// which should obviously not be escaped.
+				var param_subs = params_found[i].replace(/\s/g,pseudo_token_space);
+				param_subs = this.subs( param_subs, blacklist, error, warn, nest_sub + 1);
 				
-				// insert arguments into replacement list, but evaluate them
-				// PRIOR to doing this (6.10.3.1). We need, however, to 
-				// exclude all arguments directly preceeded or succeeded by
-				// either the stringization or the token concatenation operator
-				var repl = state[macro_name];
-				
-				for (var  i = 0; i < info.params.length; ++i) {
-					var param_subs = this.subs( params_found[i], blacklist, error, warn, nest_sub + 1);
-					
-					var rex = new RegExp("^"+info.params[i]+"\\b");
-					var ignore = false, pieces = [], m;
-					for (var j = 0; j < repl.length; ++j) {
-						if (repl[j] == '#') {
-							ignore = true;
-						}
-						else if ((m = rex.exec(repl.slice(j)))) {
-							if (!ignore) {
-								for (var k = j + m[0].length; k < repl.length; ++k) {
-									if (repl[k] == '#') {
-										ignore = true;
-									}
-									else if (!repl[k].match(/\s/)) {
-										break;
-									}
+				var rex = new RegExp("^"+info.params[i]+"\\b");
+				var ignore = false, pieces = [], m;
+				for (var j = 0; j < repl.length; ++j) {
+					if (repl[j] == '#') {
+						ignore = true;
+					}
+					else if ((m = rex.exec(repl.slice(j)))) {
+						if (!ignore) {
+							for (var k = j + m[0].length; k < repl.length; ++k) {
+								if (repl[k] == '#') {
+									ignore = true;
+								}
+								else if (!repl[k].match(/\s/)) {
+									break;
 								}
 							}
+						}
+					
+						pieces.push(repl.slice(0,j));
+						pieces.push(ignore ? params_found[i] : param_subs);
+						repl = repl.slice(j + m[0].length);
 						
-							pieces.push(repl.slice(0,j));
-							pieces.push(ignore ? params_found[i] : param_subs);
-							repl = repl.slice(j + m[0].length);
-							
-							j = -1;
-						}
-						else if (!repl[j].match(/\s/)) {
-							ignore = false;
-						}
+						j = -1;
 					}
-					pieces.push(repl);
-					repl = pieces.join('');
+					else if (!repl[j].match(/\s/)) {
+						ignore = false;
+					}
 				}
-				
-				// handle # and ## operator
-				repl = this._handle_ops(repl, error, warn);
-				
-				// and re-scan the replacement list (6.10.3.4)
-				repl = this.subs( repl, blacklist, error, warn, nest_sub + 1);
-				
-				out_pieces.push(text.slice(0, m_found.index));
-				out_pieces.push(repl);
-				text = text.slice( last );
-				
-				info.pat.lastIndex = 0;
-				
-				if(once) {
-					out_pieces.push(text);
-					break;
-				}
+				pieces.push(repl);
+				repl = pieces.join('');
 			}
-			if (!out_pieces.length) {
-				return text;
-			}
-			out_pieces.push(text);
-			return out_pieces.join('');
+			
+			// handle # and ## operator
+			repl = this._handle_ops(repl, error, warn);
+			
+			// and re-scan the replacement list (6.10.3.4)
+			repl = this.subs( repl, blacklist, error, warn, nest_sub + 1);
+			return [repl,last - start_idx];
 		},
 		
-		// /////////////////////////////////////////////////////////////////////////////
+		// ----------------------
 		_eval : function(val, error, warn) {
 			var old_val = val;
 		
