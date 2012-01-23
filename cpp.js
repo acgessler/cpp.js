@@ -133,6 +133,9 @@ function cpp_js(settings) {
 	// treated as token boundary).
 	var pseudo_token_space = '__whitespace_magic__';
 	var is_pseudo_token_space = new RegExp(pseudo_token_space,'g');
+	
+	var pseudo_token_empty = '__empty_magic__';
+	var is_pseudo_token_empty = new RegExp(pseudo_token_empty,'g');
 
 	
 	// List of preprocessing tokens.
@@ -474,10 +477,12 @@ function cpp_js(settings) {
 			
 			// if macro substitution is complete, re-introduce any
 			// '##' tokens previously substituted to keep them from 
-			// being treated as operators. Same for spaces.
+			// being treated as operators. Same for spaces and empty
+			// tokens.
 			if (!nest_sub) {
 				new_text = new_text.replace(is_pseudo_token_doublesharp,'##');
 				new_text = new_text.replace(is_pseudo_token_space,' ');
+				new_text = new_text.replace(is_pseudo_token_empty,'');
 			}
 			
 			return new_text;
@@ -541,7 +546,7 @@ function cpp_js(settings) {
 				}
 			}
 			
-			var pat = new RegExp(m[1] + '\\s*\\(','g');
+			var pat = new RegExp('\\b' + m[1] + '\\s*\\(','g');
 			
 			return {
 				params:params,
@@ -672,17 +677,14 @@ function cpp_js(settings) {
 			
 			var out_pieces = [];
 			while (m_found = info.pat.exec(text)) {
-				var params_found = [], last, tmp, nest = -1;
+				var params_found = [], last, nest = -1;
 				var full;
 				
 				// here macro invocations may be nested, so a regex is not
 				// sufficient to "parse" this.
 				for (var i = m_found.index; i < text.length; ++i) {
 					if (text[i] == ',' && !nest) {
-						if (last == i || !(tmp = trim(text.slice(last, i)))) {
-							error('unexpected token: ,');
-						}
-						params_found.push(tmp);
+						params_found.push(trim(text.slice(last, i)));
 						last = i+1;
 					}
 					
@@ -693,13 +695,8 @@ function cpp_js(settings) {
 					}
 					else if ( text[i] == ')' ) {
 						if(--nest === -1) {
-							
-							if (last == i || !(tmp = trim(text.slice(last,
-							i)))) {
-								error('unexpected token: )');
-							}
+							params_found.push(trim(text.slice(last, i)));
 							last = i+1;
-							params_found.push(tmp);
 							break;
 						}
 					}
@@ -710,15 +707,26 @@ function cpp_js(settings) {
 				}
 			
 				if (params_found.length != info.params.length) {
-					error('illegal invocation of macro ' + macro_name + ', expected ' + 
-						info.params.length + ' parameters but got ' + 
-						params_found.length);
+					// special case: if no arguments are expected and none passed either,
+					// we will still get one empty argument from the previous logic.
+					if (info.params.length || params_found.length > 1 || params_found[0]) {
+						error('illegal invocation of macro ' + macro_name + ', expected ' + 
+							info.params.length + ' parameters but got ' + 
+							params_found.length);
+					}
+					else {
+						params_found = [];
+					}
 				}
 				
 				// macro parameters may potentially be empty and they may 
 				// contain spaces, which are generally preserved. So substitute
 				// them by a magic replacement string.
 				for (var i = 0; i < params_found.length; ++i) {
+					if (!params_found[i]) {
+						params_found[i] = pseudo_token_empty;
+						continue;
+					}
 					params_found[i] = params_found[i].replace(/\s/g,pseudo_token_space);
 				}
 				
