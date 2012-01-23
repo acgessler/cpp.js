@@ -623,7 +623,7 @@ function cpp_js(settings) {
 			}
 			
 			// handle stringization operator
-			return s.replace(/#\s*(\w*)/g,'"$1"');
+			return s.replace(/#\s*(\S*)/g,'"$1"');
 		},
 		
 		_update_blacklist : function(blacklist_in, macro_name) {
