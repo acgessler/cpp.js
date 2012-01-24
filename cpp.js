@@ -803,70 +803,139 @@ function cpp_js(settings) {
 		},
 		
 		// ----------------------
-		// Evaluate the '#' and '##' preprocessor operators in the given (partially
+		// Evaluate the '##' and '#' preprocessor operator in the given (partially
 		// substituted) sequence of preprocessor tokens.
 		_handle_ops : function(text, error, warn) {
-			// 6.10.3.2 "The order of evaluation of # and ## operators 
-			// is unspecified.". We pick '##' first, I think gnu cpp 
-			// does the same.
-			var op, pieces = []; 
-			while((op = text.indexOf('##')) != -1) {
-
+		
+			// XXX The code below is not only extremely slow, it also doesn't
+			// take into account that the # operator can only be applied to
+			// macro parameter, an information that is no longer available
+			// at this point.
+		
+			// 6.10.3.2: "The order of evaluation of # and ## operators 
+			// is unspecified.". We pick '##' first.
+			var op, pieces = [], in_string = false; 
+			for (var op = 0; op < text.length-1; ++op) {
+			
+				if ((text[op] === '"' || text[op] === "'") && (!op || text[op-1] != '\\')) {
+					in_string = !in_string;
+					continue;
+				}
+				
+				if (text[op] !== '#' || in_string) {
+					continue;
+				}
+				
+				var is_concat = text[op+1] === '#';
 				var left = null, right = null;
-				for (var i = op-1; i >= 0; --i) {
-					if (!text[i].match(/\text/)) {
-						left = text[i] + (left || '');
-					}
-					else if (left !== null) {
-						break;
-					}
-				}
-				++i;
 				
-				for (var j = op+2; j < text.length; ++j) {
-					if (!text[j].match(/\text/)) {
-						right = (right || '') + text[j];
+				// identify the tokens on either side of the ## operator or
+				// only on the right side of the # operator.
+				var in_inner_string = false, nest = 0;
+				if(is_concat) {
+					for (var i = op-1; i >= 0; --i) {
+						if (!text[i].match(/\s/)) {
+							if ((text[i] === '"' || text[i] === "'") && (!i || text[i-i] != '\\')) {
+								in_inner_string = !in_inner_string;
+							}
+							else if (text[i] === '(') {
+								++nest;
+							}
+							else if (text[i] === ')') {
+								--nest;
+							}
+							left = text[i] + (left || '');
+						}
+						else if (left !== null) {
+							if(!in_inner_string && !nest) {
+								break;
+							}
+							left = ' ' + left;
+						}
 					}
-					else if (right !== null) {
-						break;
-					}
-				}
-				
-				left = trim(left || '');
-				right = trim(right || '');
-				if (!right || !left) {
-					error('## cannot appear at either end of a macro expansion');
-				}
-				
-				// To my reading of the standard, it works like this:
-				// if both sides are *not* preprocessing special tokens,
-				// the concatenation is always ok. Otherwise the result
-				// must be a valid preprocessing special token as well.
-				if ((this._is_pp_special_token(left) || this._is_pp_special_token(right)) && 
-					!this._is_pp_special_token(left + right)) {
-					error('pasting "' + left + '" and "' + right + 
-						'" does not give a valid preprocessing token'
-					);
-				}
-				
-				// the result of the concatenation is another token, but
-				// we must take care that the '##' token is not treated
-				// as concatenation operator in further replacements.
-				var concat = left + right;
-				if (concat == '##') {
-					concat = pseudo_token_doublesharp;
+					++i;
 				}
 				else {
-					// tokens that we marked as no longer available for
-					// substitution become available again when they're
-					// concatenated with other tokens.
-					concat = concat.replace(is_pseudo_token_nosubs,'');
+					i = op;
+				}
+				
+				in_inner_string = false;
+				nest = 0;
+				
+				var first_space = true; 
+				for (var j = op+(is_concat?2:1); j < text.length; ++j) {
+					if (!text[j].match(/\s/)) {
+						first_space = true;
+						if ((text[j] === '"' || text[j] === "'") && text[j] != '\\') {
+							in_inner_string = !in_inner_string;
+						}
+						else if (text[j] === '(') {
+							++nest;
+						}
+						else if (text[j] === ')') {
+							--nest;
+						}
+						right = (right || '') + text[j];
+					}
+					else if (right !== null && !in_inner_string  && !nest) {
+						break;
+					}
+					else {
+						// 6.10.3.2 (#): each occurrence of white space between the 
+						// argument's preprocessing tokens becomes a single space 
+						// character in the character string literal
+						if ((is_concat || first_space || in_inner_string) && right !== null) {
+							right = right + ' ';
+							first_space = false;
+						}
+					}
+				}
+				
+				right = trim(right || '');
+				
+				var concat;
+				if(is_concat) { 
+				
+					left = trim(left || '');
+					if (!right || !left) {
+						error('## cannot appear at either end of a macro expansion');
+					}
+					
+					// To my reading of the standard, it works like this:
+					// if both sides are *not* preprocessing special tokens,
+					// the concatenation is always ok. Otherwise the result
+					// must be a valid preprocessing special token as well.
+					if ((this._is_pp_special_token(left) || this._is_pp_special_token(right)) && 
+						!this._is_pp_special_token(left + right)) {
+						error('pasting "' + left + '" and "' + right + 
+							'" does not give a valid preprocessing token'
+						);
+					}
+					
+					// the result of the concatenation is another token, but
+					// we must take care that the '##' token is not treated
+					// as concatenation operator in further replacements.
+					concat = left + right;
+					if (concat == '##') {
+						concat = pseudo_token_doublesharp;
+					}
+					else {
+						// tokens that we marked as no longer available for
+						// substitution become available again when they're
+						// concatenated with other tokens.
+						concat = concat.replace(is_pseudo_token_nosubs,'');
+					}
+				
+				}
+				else {
+					if (!right) {
+						error('# cannot appear at the end of a macro expansion');
+					}
+					
+					concat = '"' + right.replace(/\\/g,'\\\\').replace(/"/g,'\\"') + '"';
 				}
 				
 				pieces.push(text.slice(0,i));
-				
-				// has this token already been consumed by a concatenation
-				// operation? If so,
 				pieces.push(concat);
 				
 				if (j < text.length) {
@@ -875,10 +944,10 @@ function cpp_js(settings) {
 				
 				text = pieces.join('');
 				pieces.length = 0;
+				
+				op = 0;
 			}
-			
-			// handle stringization operator
-			text = text.replace(/#\s*(\S*)/g,'"$1"');
+
 			return text;
 		},
 		
