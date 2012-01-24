@@ -241,6 +241,8 @@ function cpp_js(settings) {
 	var state = {};
 	var macro_cache = {};
 	
+	var eval_mask = null;
+	
 	var max_macro_length = 0;
 	var macro_counts_by_length = {};
 	
@@ -1022,10 +1024,64 @@ function cpp_js(settings) {
 		},
 		
 		// ----------------------
+		// Execute a sanitized arithmetic expression given by `scr` and return 
+		// the result. This is not intended to be for 'security'. We do trust any
+		// code that we preprocess. However, it would not be desirable if the
+		// JS environment could be accidentially altered from within 
+		// #if's, so let's try to hide eval()'s power as good as we can.
+		_masked_eval : function(scr) {
+			// based on http://stackoverflow.com/questions/543533/restricting-eval-to-a-narrow-scope
+			if (!eval_mask) {
+				// set up an object to serve as the context for the code
+				// being evaluated. 
+				eval_mask = {};
+				
+				// mask global properties 
+				var glob = [];
+				try {
+					// browser environment, window object present
+					glob = [window, {
+						window:1
+					}];
+				}
+				catch(e) {
+					try {
+						// node.js top-level objects present
+						glob = [global, {
+							global : 1,
+							process : 1,
+							require : 1,
+							module : 1,
+							__filename : 1,
+							__dirname : 1,
+						}];
+					} 
+					catch(e) {}
+				}
+				
+				for (var i = 0; i < glob.length; ++i) {
+					for (var p in glob[i]) {
+						eval_mask[p] = undefined;
+					}
+				}
+				
+				// bring defined() function into scope
+				eval_mask.defined = this.defined;
+			}
+		
+			eval_mask.__result__ = false;
+
+			// execute script in private context
+			(new Function( "with(this) { __result__ = (" + scr + "); }")).call(eval_mask);
+			return eval_mask.__result__;
+		},
+		
+		// ----------------------
+		// Evaluate a raw and not yet preprocessed expression from a 
+		// #if/#ifdef clause and return the result.
 		_eval : function(val, error, warn) {
 			var old_val = val;
-		
-			// see C99/6.10.1.2-3
+			// see 6.10.1.2-3
 			
 			// string literals are not allowed 
 			if (val.match(is_string_re)) {
@@ -1061,17 +1117,20 @@ function cpp_js(settings) {
 			
 			// replace all remaining identifiers with '0'
 			val = val.replace(is_identifier_re,' 0 ');
-			
-			// bring defined() function into direct scope
-			var defined = this.defined;
-			
-			// what remains should be safe to use with eval().
+		
+			// what remains _should_ be safe to use with eval() since
+			// it doesn't contain any identifiers and is thus not able
+			// to invoke global functions. This version of eval is
+			// even a bit safer and masks all global functions so 
+			// anything we missed should eventually get caught.
+			// See _masked_eval() for the details.
 			try {
-				var res = !!eval(val);
+				var res = !!this._maskedEval(val);
 			}
 			catch (e) {
-				error("error in expression: " + old_val);
+				error("error in expression: " + old_val + " (" + e + ")");
 			}
+			
 			return res;
 		},
 	};
