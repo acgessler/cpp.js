@@ -146,12 +146,15 @@ cpp.js was written with the C99 language standard in mind and conforms in most
 aspects. However, its expression evaluation engine is based on `eval`, whose
 arithmetics are not strictly C-compliant (i.e. underflow/overflow).
 
+`#` is evaluated regardless whether the next token is a substituted macro
+argument or not.
+
 Error messages are mostly taken directly from `gnu cpp`.
 
 Not supported are:
   
  - variadic argument lists
- - 
+ - character constants in arithmetics
  - predefined macro names from C (i.e. `__FILE__`)
  - `#line`
 
