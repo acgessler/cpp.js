@@ -6,7 +6,7 @@ var fs = require('fs');
 
 var settings = { 
    signal_char : '#',
-   include_func : function(file, resumer, error) {
+   include_func : function(file, is_global, resumer, error) {
 		fs.readFile(file, function(err,text) {
 			resumer(err ? null : text.toString());
 		});

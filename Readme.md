@@ -22,7 +22,7 @@ to this page is also fine).
 
 ### Usage ###
 
-(This sample is effectively the entire documentation, feel free to contribute further contents).
+(This sample is effectively the entire external documentation, feel free to contribute further contents).
 
 ```javascript
 
@@ -50,8 +50,8 @@ var settings = {
    // The default implementation handles C and C++-style
    // comments and also removes line continuations.
    // Since this function is invoked on all files before
-   // any preprocessing happens, it can be thought of a 
-   // generic preprocessor to the preprocessor.
+   // any preprocessing happens, it can be thought of as a 
+   // "preprocessor to the preprocessor".
    comment_stripper : null
 }
 
@@ -75,12 +75,13 @@ pp.undef('DEBUG');
 pp.defined('DEBUG'); // => false
 
 // Now invoke the preprocesser on the given text block.
-// Keep in mind that the processor keeps the state obtained from executing 
-// the text block, so if run() is invoked on multiple text blocks, any 
+// The processor keeps the state obtained from executing the text 
+// block. Therefore, if run() is invoked on multiple text blocks, any
 // defines from a block will also apply to its successors.
 
-// However, a text block is assumed to be syntactically complete on its own, 
-// i.e. all if's must be closed and may not leap into the next block.
+// However, a text block is assumed to be syntactically complete 
+// i.e. all conditional blocks and also all comments must be closed
+// and may not leap into the next block.
 var preprocessed_source = pp.run(text);
 
 // Calling clear() resets all defined values. The effect is the same as if
@@ -123,7 +124,11 @@ The basic structure for this scenario is like this:
 
 ```javascript
 
-settings.include_func = function(file, resumer, error) {
+settings.include_func = function(file, is_global, resumer, error) {
+
+	// `is_global` is `true` if the file name was enclosed
+	// in < .. > rather than " .. ".
+
     do_fancy_magic_to_fetch_this_file(file, function(contents) {
 		// call resumer(null) if the file is not accessible
 	   resumer(contents);
@@ -144,9 +149,11 @@ arithmetics are not strictly C-compliant (i.e. underflow/overflow).
 Error messages are mostly taken directly from `gnu cpp`.
 
 Not supported are:
-  - variadic argument lists
-  - predefined macro names from C (i.e. `__FILE__`)
-  - `#line`
+  
+ - variadic argument lists
+ - 
+ - predefined macro names from C (i.e. `__FILE__`)
+ - `#line`
 
 
 

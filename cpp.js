@@ -194,7 +194,7 @@ function cpp_js(settings) {
 	var is_increment_re = /--|\+\+/g;
 	
 	// Grav <included_file> or "included_file"
-	var include_re = /(?:<(.*)>|"(.*)")(.*)/;
+	var include_re = /(?:(<)(.*)>|"(.*)")(.*)/;
 	
 	// Magic token to signify the '##' token (to keep it from being
 	// treated as the operator of the same signature).
@@ -418,17 +418,17 @@ function cpp_js(settings) {
 				case "include":
 					elem = self.subs(elem, {}, error, warn);
 					var parts = elem.match(include_re);
-					if (parts[3]) {
+					if (parts[4]) {
 						error("unrecognized characters in include: " + elem);
 					}
-					var file = (parts[1] || '') + (parts[2] || '');
+					var file = (parts[2] || '') + (parts[3] || '');
 					
 					if (!settings.include_func) {
 						error("include directive not supported, " +
 							"no handler specified");
 					}
 					
-					settings.include_func(file, function(contents) {
+					settings.include_func(file, parts[1] === '<', function(contents) {
 						if (contents === null) {
 							error("failed to access include file: " +
 								file);
