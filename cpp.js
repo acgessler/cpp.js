@@ -119,6 +119,12 @@ function cpp_js(settings) {
 		}
 		return str.join('').slice(2, -2);
 	};
+	
+	var is_string_boundary = function(text, idx) {
+		return (text[idx] == '"' || text[idx] == "'") && 
+			(!idx || text[idx-1] != '\\' ||
+			(idx > 1 && text[idx-2] == '\\'));
+	};
 
 	// dictionary of default settings, including default error handlers
 	var default_settings = {
@@ -620,8 +626,7 @@ function cpp_js(settings) {
 			while (m_boundary = rex.exec(new_text)) {
 			
 				var idx = m_boundary.index;
-				if ((m_boundary[0] == '"' || m_boundary[0] == "'") && (!idx || new_text[idx-1] != '\\' 
-					|| (idx > 1 && new_text[idx-2] == '\\'))) {
+				if (is_string_boundary(new_text, idx)) {
 					in_string = !in_string;
 				}
 				
@@ -806,6 +811,7 @@ function cpp_js(settings) {
 		// Evaluate the '##' and '#' preprocessor operator in the given (partially
 		// substituted) sequence of preprocessor tokens.
 		_handle_ops : function(text, error, warn) {
+	
 		
 			// XXX The code below is not only extremely slow, it also doesn't
 			// take into account that the # operator can only be applied to
@@ -817,7 +823,7 @@ function cpp_js(settings) {
 			var op, pieces = [], in_string = false; 
 			for (var op = 0; op < text.length-1; ++op) {
 			
-				if ((text[op] === '"' || text[op] === "'") && (!op || text[op-1] != '\\')) {
+				if (is_string_boundary(text,op)) {
 					in_string = !in_string;
 					continue;
 				}
@@ -835,7 +841,7 @@ function cpp_js(settings) {
 				if(is_concat) {
 					for (var i = op-1; i >= 0; --i) {
 						if (!text[i].match(/\s/)) {
-							if ((text[i] === '"' || text[i] === "'") && (!i || text[i-i] != '\\')) {
+							if (is_string_boundary(text,i)) {
 								in_inner_string = !in_inner_string;
 							}
 							else if (text[i] === '(') {
@@ -866,7 +872,7 @@ function cpp_js(settings) {
 				for (var j = op+(is_concat?2:1); j < text.length; ++j) {
 					if (!text[j].match(/\s/)) {
 						first_space = true;
-						if ((text[j] === '"' || text[j] === "'") && text[j] != '\\') {
+						if (is_string_boundary(text,j)) {
 							in_inner_string = !in_inner_string;
 						}
 						else if (text[j] === '(') {
