@@ -1125,7 +1125,7 @@ function cpp_js(settings) {
 			// anything we missed should eventually get caught.
 			// See _masked_eval() for the details.
 			try {
-				var res = !!this._maskedEval(val);
+				var res = !!this._masked_eval(val);
 			}
 			catch (e) {
 				error("error in expression: " + old_val + " (" + e + ")");
