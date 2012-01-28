@@ -13,6 +13,12 @@ is performed (almost) in accordance with the C99 specification. See the
 My pet project medea.js uses this code to preprocess GLSL shaders, other use
 cases might even exist. 
 
+### Releases ###
+
+You can find both normal and minified release builds in the [download tab](https://github.com/acgessler/cpp.js/downloads).
+
+ - __1.0__ (2011-01-28) Initial release. 
+
 ### License ###
 
 Modified BSD license, see the LICENSE file for the full text. Means 
