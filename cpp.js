@@ -1128,7 +1128,7 @@ function cpp_js(settings) {
 							require : 1,
 							module : 1,
 							__filename : 1,
-							__dirname : 1,
+							__dirname : 1
 						}];
 					} 
 					catch(e) {}
@@ -1207,7 +1207,7 @@ function cpp_js(settings) {
 			}
 			
 			return res;
-		},
+		}
 	};
 };
 
