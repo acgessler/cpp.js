@@ -361,6 +361,10 @@ function cpp_js(settings) {
 		run : function(text, name) {
 			name = name || '<unnamed>';
 			
+			if (!text) {
+				error('input empty or null');
+			}
+			
 			text = settings.comment_stripper(text);
 			var blocks = text.split(block_re);
 			
@@ -1056,7 +1060,7 @@ function cpp_js(settings) {
 					params_found[i] = pseudo_token_empty;
 				}
 			}
-			
+			console.log(params_found);
 			// insert arguments into replacement list, but evaluate them
 			// PRIOR to doing this (6.10.3.1). We need, however, to 
 			// exclude all arguments directly preceeded or succeeded by
@@ -1065,11 +1069,12 @@ function cpp_js(settings) {
 			
 			for (var  i = 0; i < info.params.length; ++i) {
 				// what applies to empty parameter applies to whitespace in the
-				// parameter text as well. Substitute by a magic sentinel.
+				// parameter text as well (only whitespace that concates two
+				// otherwise distinct tokens). Substitute by a magic sentinel.
 				// This must be done PRIOR to evaluating the parameters -
 				// a parameter might evaluate to something like '2, 4'
 				// which should obviously not be escaped.
-				var param_subs = params_found[i].replace(/\s/g,pseudo_token_space);
+				var param_subs = params_found[i].replace(/(\w)\s+(\w)/g,'$1' + pseudo_token_space+'$2');
 				param_subs = this.subs( param_subs, blacklist, error, warn, nest_sub + 1);
 				
 				var rex = new RegExp("^"+info.params[i]+"\\b");
