@@ -671,7 +671,10 @@ function cpp_js(settings) {
 							// adjust blacklist indices
 							for(var kk in blacklist) {
 								if (blacklist[kk] != TOTALLY_BLACK) {
-									blacklist[kk] -= idx+k.length;
+									if (blacklist[kk] > idx) {
+										blacklist[kk] -= idx+k.length;
+									}
+									else delete blacklist[kk];
 								}
 							};
 							break;
@@ -709,7 +712,10 @@ function cpp_js(settings) {
 						// adjust blacklist indices
 						for(var kk in blacklist) {
 							if (blacklist[kk] != TOTALLY_BLACK) {
-								blacklist[kk] -= idx;
+								if (blacklist[kk] > idx) {
+									blacklist[kk] = (sub[0].length-sub[1]) +( blacklist[kk] - idx);
+								}
+								else delete blacklist[kk];
 							}
 						}
 						
