@@ -6,17 +6,20 @@
 
 function update() {
 
+	document.getElementById("dest").value = "";
+
+	var warnings = '';
 	var settings = {
 		error_func : function(err) {
 			document.getElementById("dest").value = err;
 		},
 		warn_func : function(err) {
-			document.getElementById("dest").value += '\n//' + err + '\n';
+			warnings += '\n//' + err + '\n';
 		}
 	};
 
 	var cpp = cpp_js(settings);
-	document.getElementById("dest").value = cpp.run(document.getElementById("src").value);
+	document.getElementById("dest").value = warnings + cpp.run(document.getElementById("src").value);
 }
 </script>
 </head>

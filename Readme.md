@@ -155,6 +155,13 @@ arithmetics are not strictly C-compliant (i.e. underflow/overflow).
 `#` is evaluated regardless whether the next token is a substituted macro
 argument or not.
 
+It is also important to note that cpp.js does not tokenize the input stream
+into preprocessing tokens (it works on the plain text input instead). The 
+output should in almost all cases be correct, though, so this is no matter
+for most use cases. However, this design decision made proper handling of 
+placeholder preprocessing tokens tricky and there are surely bugs in this
+part.
+
 Error messages are mostly taken directly from `gnu cpp`.
 
 Not supported are:
