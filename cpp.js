@@ -497,8 +497,9 @@ function cpp_js(settings) {
 				switch(i % 3) {
 				// code line, apply macro substitutions and copy to output.
 				case 0:
+	
 					line += elem.split('\n').length-1;
-					if (!ifs_failed) {
+					if (!ifs_failed && trim(elem).length) {
 						out[outi++] = self.subs(elem, error, warn);
 					}
 					break;
