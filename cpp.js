@@ -1060,7 +1060,7 @@ function cpp_js(settings) {
 					params_found[i] = pseudo_token_empty;
 				}
 			}
-			console.log(params_found);
+
 			// insert arguments into replacement list, but evaluate them
 			// PRIOR to doing this (6.10.3.1). We need, however, to 
 			// exclude all arguments directly preceeded or succeeded by
