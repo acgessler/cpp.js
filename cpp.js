@@ -142,7 +142,11 @@ function cpp_js(settings) {
 		comment_stripper : strip_cpp_comments,
 		
 		include_func : null,
-		completion_func : null
+		completion_func : null,
+		
+		pragma_func : function(pragma) {
+			return null;
+		}
 	};
 	
 	// apply default settings
@@ -483,8 +487,9 @@ function cpp_js(settings) {
 					break;
 					
 				case "pragma":
-					// silently ignore unrecognized pragma
-					// directives (i.e. all at this time)
+					if(!settings.pragma_func(elem)) {
+						warn('ignoring unrecognized #pragma: ' + elem);
+					}
 					break;
 					
 				default:
@@ -693,6 +698,9 @@ function cpp_js(settings) {
 						// handle # and ## operator
 						sub[0] = this._handle_ops(sub[0], error, warn);
 						
+						// handle _Pragma()
+						sub[0] = this._handle_pragma(sub[0], error, warn);
+						
 						// XXX a bit too expensive ... but not too easy to avoid.
 						pieces.push(new_text.slice(0,idx));
 						new_text = sub[0] + new_text.slice(idx+sub[1]);
@@ -720,14 +728,11 @@ function cpp_js(settings) {
 			new_text = pieces.join('');
 			
 			// if macro substitution is complete, re-introduce any
-			// '##' tokens previously substituted to keep them from 
-			// being treated as operators. Same for spaces and empty
+			// '##' tokens previously substituted in order to keep them 
+			// from being treated as operators. Same for spaces and empty
 			// tokens.
 			if (!nest_sub) {
-				new_text = new_text.replace(is_pseudo_token_doublesharp,'##');
-				new_text = new_text.replace(is_pseudo_token_space,' ');
-				new_text = new_text.replace(is_pseudo_token_empty,'');
-				new_text = new_text.replace(is_pseudo_token_nosubs,'');
+				new_text = this._remove_sentinels(new_text);
 			}
 			
 			return new_text;
@@ -817,6 +822,67 @@ function cpp_js(settings) {
 				name:m[1],
 				full:k
 			};
+		},
+		
+		// ----------------------
+		// Remove all sentinel strings (i.e. placeholders for spaces
+		// or empty tokens to indicate placeholder tokens) from the 
+		// given string.
+		_remove_sentinels : function(new_text) {
+			new_text = new_text.replace(is_pseudo_token_doublesharp,'##');
+			new_text = new_text.replace(is_pseudo_token_space,' ');
+			new_text = new_text.replace(is_pseudo_token_empty,'');
+			new_text = new_text.replace(is_pseudo_token_nosubs,'');
+			return new_text;
+		},
+		
+		// ----------------------
+		// Evaluate the _Pragma(string) preprocessor operator in the given 
+		// (partially substituted) sequence of preprocessor tokens.
+		_handle_pragma : function(text, error, warn) {
+			var self = this;
+			// XXX obviously RE aren't sufficient here either, do proper parse.
+			return text.replace(/_Pragma\s*\(\s*"(.*?([^\\]|\\\\))"\s*\)/g, function(match, pragma) {
+				// destringize 
+				pragma =  pragma.replace(/\\"/g,'"').replace(/\\\\/g,'\\');
+				pragma = self._remove_sentinels(pragma);
+				pragma = self._concatenate_strings(pragma);
+				
+				if (!settings.pragma_func(pragma)) {
+					warn('unrecognized _Pragma(): ' + pragma);
+				}
+			
+				// always substitute an empty string so processing
+				// can continue.
+				return '';
+			});
+		},
+		
+		// ----------------------
+		// Concatenate neighbouring string literals such as " hello "
+		// "world " and return the result.
+		_concatenate_strings : function(text) {
+			var in_string = false, last = null, last_taken = 0;
+			var text_out = [];
+			for (var i = 0; i < text.length; ++i) {
+				if (is_string_boundary(text,i)) {
+					if (in_string) {
+						last = i;
+					}
+					else if (last !== null) {
+						text_out.push(text.slice(last_taken, last));
+						last_taken = i+1;
+					}
+					in_string = !in_string;
+				}
+				else if (!text[i].match(/\s/)){
+					text_out.push(text.slice(last_taken, i));
+					last_taken = i;
+					last = null;
+				}
+			}
+			text_out.push(text.slice(last_taken));
+			return text_out.join('');
 		},
 		
 		// ----------------------
@@ -1060,7 +1126,7 @@ function cpp_js(settings) {
 					params_found[i] = pseudo_token_empty;
 				}
 			}
-
+		
 			// insert arguments into replacement list, but evaluate them
 			// PRIOR to doing this (6.10.3.1). We need, however, to 
 			// exclude all arguments directly preceeded or succeeded by
@@ -1107,6 +1173,9 @@ function cpp_js(settings) {
 					}
 					bound = repl[j].match(/\W/);
 				}
+				
+				
+			
 				pieces.push(repl);
 				repl = pieces.join('');
 			}

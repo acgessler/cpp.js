@@ -13,13 +13,15 @@ function update() {
 		error_func : function(err) {
 			document.getElementById("dest").value = err;
 		},
-		warn_func : function(err) {
-			warnings += '\n//' + err + '\n';
+		warn_func : function(warn) {
+			warnings += '//' + warn + '\n';
 		}
 	};
 
 	var cpp = cpp_js(settings);
-	document.getElementById("dest").value = warnings + cpp.run(document.getElementById("src").value);
+	var res = cpp.run(document.getElementById("src").value);
+	
+	document.getElementById("dest").value = '// cpp.js warnings: \n' + warnings + '\n\n' + res;
 }
 </script>
 </head>
