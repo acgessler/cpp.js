@@ -661,7 +661,7 @@ function cpp_js(settings) {
 						// if this would be a match, but the macro is blacklisted,
 						// we need to skip it alltogether or parts of it might be
 						// interpreted as macros on their own.
-						if (blacklist[k] >= idx) {
+						if (blacklist[k] > idx) {
 			
 							pieces.push(new_text.slice(0,idx));
 							pieces.push(pseudo_token_nosubs+k);
@@ -717,7 +717,7 @@ function cpp_js(settings) {
 						// blacklisted until we're beyond the replacement. This 
 						// prevents infinite recursion and is also mandated by the
 						// standard and crucial for proper evaluation of several of
-						// the ... evil samples.
+						// its more ... evil ehm elaborate samples.
 						blacklist[k] = sub[0].length;
 						break;
 					}
