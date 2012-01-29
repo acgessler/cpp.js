@@ -161,6 +161,13 @@ function cpp_js(settings) {
 		settings.error_func("include_func but not completion_func specified");
 	}
 	
+	// make sure that execution never continues when an error occurs.
+	var user_err = settings.error_func;
+	settings.error_func = function(e) {
+		user_err(e);
+		throw e;
+	}
+	
 	// generate a 3 tuple (command, arguments, code_block)
 	var block_re = new RegExp("^"+settings.signal_char+
 		"(\\w+)[ \t]*(.*?)[ \t]*$","m"
