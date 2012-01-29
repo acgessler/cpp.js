@@ -1078,12 +1078,12 @@ function cpp_js(settings) {
 				param_subs = this.subs( param_subs, blacklist, error, warn, nest_sub + 1);
 				
 				var rex = new RegExp("^"+info.params[i]+"\\b");
-				var ignore = false, pieces = [], m;
+				var ignore = false, pieces = [], m, bound = true;
 				for (var j = 0; j < repl.length; ++j) {
 					if (repl[j] == '#') {
 						ignore = true;
 					}
-					else if ((m = rex.exec(repl.slice(j)))) {
+					else if (bound && (m = rex.exec(repl.slice(j)))) {
 						if (!ignore) {
 							for (var k = j + m[0].length; k < repl.length; ++k) {
 								if (repl[k] == '#') {
@@ -1100,10 +1100,12 @@ function cpp_js(settings) {
 						repl = repl.slice(j + m[0].length);
 						
 						j = -1;
+						continue;
 					}
 					else if (!repl[j].match(/\s/)) {
 						ignore = false;
 					}
+					bound = repl[j].match(/\W/);
 				}
 				pieces.push(repl);
 				repl = pieces.join('');
