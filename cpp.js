@@ -393,7 +393,7 @@ function cpp_js(settings) {
 			var skip = false;
 			var self = this;
 			
-			var process_directive = function(command, elem) {
+			var process_directive = function(command, elem, i) {
 				switch (command) {
 				case "define":
 					var head, tail;
@@ -467,7 +467,12 @@ function cpp_js(settings) {
 							outi += lines.length;
 							out = out.concat(lines);
 			
-							state = new_state;
+							// this is a bit inefficient, but we need to update
+							// *all* macro lookup tables, and this is the safest
+							// way to do this.
+							self.clear();
+							self.define_multiple(state);
+							
 							for (++i; i < blocks.length; ++i) {
 								if(!process_block(i,blocks[i])) {
 									return false;
@@ -476,6 +481,9 @@ function cpp_js(settings) {
 							self._result(out, state);
 						};
 						
+						// construct a child preprocessor and transfer our pipeline
+						// state to it. Future versions may share the dictionaries
+						// themselves, but for now this is safer.
 						var processor = cpp_js(s);
 						processor.define_multiple(state);
 						processor.run(contents, file);
@@ -587,7 +595,7 @@ function cpp_js(settings) {
 
 					// not done yet, so this is a plain directive (i.e. include)
 					if(!done) {
-						if(!process_directive(command, elem)) {
+						if(!process_directive(command, elem, i)) {
 							return false;
 						}
 					}
