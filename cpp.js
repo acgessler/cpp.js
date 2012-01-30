@@ -461,17 +461,16 @@ function cpp_js(settings) {
 							s[k] = settings[k]; 
 						}
 						
+						var processor;
+						
 						s.completion_func = function(data, lines, new_state) {
 							out.length = outi;
 							
 							outi += lines.length;
 							out = out.concat(lines);
 			
-							// this is a bit inefficient, but we need to update
-							// *all* macro lookup tables, and this is the safest
-							// way to do this.
-							self.clear();
-							self.define_multiple(state);
+							// grab any state changes
+							self._set_state(processor);
 							
 							for (++i; i < blocks.length; ++i) {
 								if(!process_block(i,blocks[i])) {
@@ -481,11 +480,10 @@ function cpp_js(settings) {
 							self._result(out, state);
 						};
 						
-						// construct a child preprocessor and transfer our pipeline
-						// state to it. Future versions may share the dictionaries
-						// themselves, but for now this is safer.
-						var processor = cpp_js(s);
-						processor.define_multiple(state);
+						// construct a child preprocessor and let it share our
+						// state.
+						processor = cpp_js(s);
+						processor._set_state(self);
 						processor.run(contents, file);
 					});
 					return false;
@@ -751,6 +749,28 @@ function cpp_js(settings) {
 			
 			return new_text;
 		}, 
+		
+		// ----------------------
+		// Transfer the state from another cpp.js instance to us.
+		_set_state : function(other) {
+			other = other._get_state();
+		
+			state = other.state;
+			macro_counts_by_length = other.macro_counts_by_length;
+			macro_cache = other.macro_cache;
+			max_macro_length = other.max_macro_length;
+		},
+		
+		// ----------------------
+		// Get a dictionary containing the full processing state of us
+		_get_state : function(other) {
+			return {
+				state : state,
+				macro_counts_by_length : macro_counts_by_length,
+				macro_cache : macro_cache,
+				max_macro_length : max_macro_length
+			};
+		},
 		
 		// ----------------------
 		// Given an array of single lines, produce the result text by merging lines
