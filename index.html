@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <meta charset='utf-8' />
+    <meta http-equiv="X-UA-Compatible" content="chrome=1" />
+    <meta name="description" content="Cpp.js : node.js-compatible implementation of the C Preprocessor (cpp) in Javascript" />
+
+    <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
+
+    <title>Cpp.js</title>
+  </head>
+
+  <body>
+
+    <!-- HEADER -->
+    <div id="header_wrap" class="outer">
+        <header class="inner">
+          <a id="forkme_banner" href="https://github.com/acgessler/cpp.js">Fork Me on GitHub</a>
+
+          <h1 id="project_title">Cpp.js</h1>
+          <h2 id="project_tagline">node.js-compatible implementation of the C Preprocessor (cpp) in Javascript</h2>
+
+          <section id="downloads">
+            <a class="zip_download_link" href="https://github.com/acgessler/cpp.js/zipball/master">Download this project as a .zip file</a>
+            <a class="tar_download_link" href="https://github.com/acgessler/cpp.js/tarball/master">Download this project as a tar.gz file</a>
+          </section>
+        </header>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main_content_wrap" class="outer">
+      <section id="main_content" class="inner">
+        <h1>cpp.js</h1>
+
+<h4>C Preprocessor in Javascript</h4>
+
+<p>cpp.js is a tiny implementation of the C preprocessor (cpp) in Javascript (js).</p>
+
+<p>It supports all features of the original, including <code>#include</code>'s and the
+stringization (<code>#</code>) and token concatenation (<code>##</code>) operators. Macro substitution
+is performed (almost) in accordance with the C99 specification. See the 
+<em>Conformance</em> section for more information.</p>
+
+<p>My pet project medea.js uses this code to preprocess GLSL shaders, other use
+cases might even exist. </p>
+
+<h3>Releases</h3>
+
+<p>You can find both normal and minified release builds in the <a href="https://github.com/acgessler/cpp.js/downloads">download tab</a>.</p>
+
+<ul>
+<li>
+<strong>1.0</strong> (2011-01-28) Initial release. </li>
+</ul><h3>License</h3>
+
+<p>Modified BSD license, see the LICENSE file for the full text. Means 
+basically you can do everything with it, except claim you wrote it
+and a copy of the license should always be distributed (a backlink
+to this page is also fine).</p>
+
+<h3>Usage</h3>
+
+<p>(This sample is effectively the entire external documentation, feel free to contribute further contents).</p>
+
+<div class="highlight">
+<pre>
+<span class="c1">// Setup basic settings for the preprocessor. The values as shown below</span>
+<span class="c1">// are the default values and can be omitted.</span>
+<span class="kd">var</span> <span class="nx">settings</span> <span class="o">=</span> <span class="p">{</span> 
+
+   <span class="c1">// signal string that starts a preprocessor command, </span>
+   <span class="c1">// only honoured at the beginning of a line.</span>
+   <span class="nx">signal_char</span> <span class="o">:</span> <span class="s1">'#'</span><span class="p">,</span>
+
+   <span class="c1">// function used to print warnings, the default </span>
+   <span class="c1">// implementation logs to the console.</span>
+   <span class="nx">warn_func</span> <span class="o">:</span> <span class="kc">null</span><span class="p">,</span>
+
+   <span class="c1">// function used to print critical errors, the default </span>
+   <span class="c1">// implementation logs to the console and throws.</span>
+   <span class="nx">error_func</span> <span class="o">:</span> <span class="kc">null</span><span class="p">,</span>
+
+   <span class="c1">// function to be invoked to fetch include files.</span>
+   <span class="c1">// See the section "Handling include files" below.</span>
+   <span class="nx">include_func</span> <span class="o">:</span> <span class="kc">null</span><span class="p">,</span>
+
+   <span class="c1">// function used to strip comments from the input file.</span>
+   <span class="c1">// The default implementation handles C and C++-style</span>
+   <span class="c1">// comments and also removes line continuations.</span>
+   <span class="c1">// Since this function is invoked on all files before</span>
+   <span class="c1">// any preprocessing happens, it can be thought of as a </span>
+   <span class="c1">// "preprocessor to the preprocessor".</span>
+   <span class="nx">comment_stripper</span> <span class="o">:</span> <span class="kc">null</span>
+<span class="p">}</span>
+
+<span class="c1">// Create an instance of the library. `settings` is optional.</span>
+<span class="kd">var</span> <span class="nx">pp</span> <span class="o">=</span> <span class="nx">cpp_js</span><span class="p">(</span> <span class="nx">settings</span> <span class="p">);</span>
+
+<span class="c1">// Predefine some symbols, the same effect could be reached</span>
+<span class="c1">// by prepending the corresponding #define's to the source</span>
+<span class="c1">// code for preprocessing but this is way nicer.</span>
+<span class="c1">// cpp.js by itself does not predefine any symbols.</span>
+<span class="kd">var</span> <span class="nx">predefined</span> <span class="o">=</span> <span class="p">{</span>
+   <span class="nx">DEBUG</span> <span class="o">:</span> <span class="s1">''</span><span class="p">,</span>               <span class="c1">// equivalent to `#define DEBUG`</span>
+   <span class="nx">ANOTHER_DEFINE</span> <span class="o">:</span> <span class="s1">'248935'</span> <span class="c1">// equivalent to `#define ANOTHER_DEFINE 248935`</span>
+<span class="p">};</span>
+
+<span class="nx">pp</span><span class="p">.</span><span class="nx">define_multiple</span><span class="p">(</span><span class="nx">predefined</span><span class="p">);</span>
+
+<span class="nx">pp</span><span class="p">.</span><span class="nx">define</span><span class="p">(</span><span class="s2">"macro_with_args(a,b)"</span><span class="p">,</span><span class="s2">"a ## b"</span><span class="p">);</span>
+
+<span class="nx">pp</span><span class="p">.</span><span class="nx">undef</span><span class="p">(</span><span class="s1">'DEBUG'</span><span class="p">);</span>
+<span class="nx">pp</span><span class="p">.</span><span class="nx">defined</span><span class="p">(</span><span class="s1">'DEBUG'</span><span class="p">);</span> <span class="c1">// =&gt; false</span>
+
+<span class="c1">// Now invoke the preprocesser on the given text block.</span>
+<span class="c1">// The processor keeps the state obtained from executing the text </span>
+<span class="c1">// block. Therefore, if run() is invoked on multiple text blocks, any</span>
+<span class="c1">// defines from a block will also apply to its successors.</span>
+
+<span class="c1">// However, a text block is assumed to be syntactically complete </span>
+<span class="c1">// i.e. all conditional blocks and also all comments must be closed</span>
+<span class="c1">// and may not leap into the next block.</span>
+<span class="kd">var</span> <span class="nx">preprocessed_source</span> <span class="o">=</span> <span class="nx">pp</span><span class="p">.</span><span class="nx">run</span><span class="p">(</span><span class="nx">text</span><span class="p">);</span>
+
+<span class="c1">// Calling clear() resets all defined values. The effect is the same as if</span>
+<span class="c1">// a fresh cpp.js instance with same settings was created.</span>
+<span class="nx">pp</span><span class="p">.</span><span class="nx">clear</span><span class="p">();</span>
+
+</pre>
+</div>
+
+
+<h3>node.js</h3>
+
+<p>cpp.js also works as a node.js module:</p>
+
+<div class="highlight">
+<pre>
+<span class="kd">var</span> <span class="nx">cpp</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">"./cpp"</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">pp</span> <span class="o">=</span> <span class="nx">cpp</span><span class="p">.</span><span class="nx">create</span><span class="p">(</span> <span class="nx">settings</span> <span class="p">);</span>
+
+<span class="c1">// ...</span>
+<span class="c1">// same as above</span>
+
+</pre>
+</div>
+
+
+<h3>Handling #include files</h3>
+
+<p>By default, include directives cause errors. To enable <code>#include</code>-support, one
+must specify an <code>include_func</code> in the initial settings. This function receives
+the name of the include file that is requested and a closure to resume
+preprocessing as soon as the file is available (the mechanism is thus 
+compatible with asynchronous file reading, i.e. via AJAX or node.js).</p>
+
+<p><strong>If include files are enabled, cpp.js becomes strictly asynchronous</strong> and
+<code>run()</code> always returns null. Therefore it is also necessary to specify an
+<code>completion_func</code> callback in the settings, which is invoked as soon as 
+preprocessing is complete, receiving the preprocessed text as parameter.</p>
+
+<p>Specifying an <code>include_func</code> but no <code>completion_func</code> is not allowed.</p>
+
+<p>The basic structure for this scenario is like this:</p>
+
+<div class="highlight">
+<pre>
+<span class="nx">settings</span><span class="p">.</span><span class="nx">include_func</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">file</span><span class="p">,</span> <span class="nx">is_global</span><span class="p">,</span> <span class="nx">resumer</span><span class="p">,</span> <span class="nx">error</span><span class="p">)</span> <span class="p">{</span>
+
+    <span class="c1">// `is_global` is `true` if the file name was enclosed</span>
+    <span class="c1">// in &lt; .. &gt; rather than " .. ".</span>
+
+    <span class="nx">do_fancy_magic_to_fetch_this_file</span><span class="p">(</span><span class="nx">file</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">contents</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// call resumer(null) if the file is not accessible</span>
+       <span class="nx">resumer</span><span class="p">(</span><span class="nx">contents</span><span class="p">);</span>
+    <span class="p">});</span>
+<span class="p">};</span>
+
+<span class="nx">settings</span><span class="p">.</span><span class="nx">completion_func</span> <span class="o">=</span> <span class="kd">function</span><span class="p">(</span><span class="nx">preprocessed_text</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// process result</span>
+<span class="p">};</span>
+</pre>
+</div>
+
+
+<h3>Conformance</h3>
+
+<p>cpp.js was written with the C99 language standard in mind and conforms in most
+aspects. However, its expression evaluation engine is based on <code>eval</code>, whose
+arithmetics are not strictly C-compliant (i.e. underflow/overflow).</p>
+
+<p><code>#</code> is evaluated regardless whether the next token is a substituted macro
+argument or not.</p>
+
+<p>It is also important to note that cpp.js does not tokenize the input stream
+into preprocessing tokens (it works on the plain text input instead). The 
+output should in almost all cases be correct, though, so this is no matter
+for most use cases. However, this design decision made proper handling of 
+placeholder preprocessing tokens tricky and there are surely bugs in this
+part.</p>
+
+<p>Error messages are mostly taken directly from <code>gnu cpp</code>.</p>
+
+<p>Not supported are:</p>
+
+<ul>
+<li>variadic argument lists</li>
+<li>character constants in arithmetics</li>
+<li>predefined macro names from C (i.e. <code>__FILE__</code>)</li>
+<li><code>#line</code></li>
+</ul>
+      </section>
+    </div>
+
+    <!-- FOOTER  -->
+    <div id="footer_wrap" class="outer">
+      <footer class="inner">
+        <p class="copyright">Cpp.js maintained by <a href="https://github.com/acgessler">acgessler</a></p>
+        <p>Published with <a href="http://pages.github.com">GitHub Pages</a></p>
+      </footer>
+    </div>
+
+    
+
+  </body>
+</html>
