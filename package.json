@@ -1,0 +1,25 @@
+{
+    "name": "cpp.js",
+    "version": "1.0.0",
+    "description": "node.js-compatible implementation of the C Preprocessor (cpp) in Javascript",
+    "main": "cpp.js",
+    "files": [
+        "cpp.js"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/acgessler/cpp.js.git"
+    },
+    "keywords": [
+        "cpp",
+        "c++",
+        "preprocessor",
+        "cpp.js"
+    ],
+    "author": "Alexander Gessler (https://github.com/acgessler)",
+    "license": "SEE LICENSE IN LICENSE",
+    "bugs": {
+        "url": "https://github.com/acgessler/cpp.js/issues"
+    },
+    "homepage": "https://github.com/acgessler/cpp.js#readme"
+}
